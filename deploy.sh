@@ -126,13 +126,25 @@ setup_ssl() {
 deploy_services() {
     print_status "Building and starting services..."
     
-    # Build images
+    # Build images with error handling
     print_status "Building Docker images..."
-    docker-compose build --parallel
+    if ! docker-compose build --parallel; then
+        print_error "Docker build failed. Common solutions:"
+        print_status "1. Try: docker-compose build --no-cache"
+        print_status "2. Try: docker system prune -a && docker-compose build"
+        print_status "3. Use development setup: ./dev-setup.sh"
+        print_status "4. Check DOCKER_SETUP.md for detailed troubleshooting"
+        exit 1
+    fi
     
     # Start services
     print_status "Starting services..."
-    docker-compose up -d
+    if ! docker-compose up -d; then
+        print_error "Failed to start services. Try:"
+        print_status "1. Check ports: docker-compose down && docker-compose up -d"
+        print_status "2. Use development setup: ./dev-setup.sh"
+        exit 1
+    fi
     
     # Wait for services to be ready
     print_status "Waiting for services to be ready..."
