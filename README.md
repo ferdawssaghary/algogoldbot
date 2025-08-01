@@ -1,0 +1,2 @@
+# algogoldbot
+XAU/USDbot
