@@ -1,22 +1,27 @@
+# Use Node.js 18 Alpine image
 FROM node:18-alpine
 
 # Set working directory
 WORKDIR /app
 
-# Copy package files
+# Install dependencies first for better caching
 COPY package*.json ./
 
-# Install dependencies (including dev dependencies for build)
-RUN npm ci
+# Clear npm cache and install dependencies
+RUN npm cache clean --force && \
+    npm install
 
-# Copy source code
+# Copy all source files
 COPY . .
 
-# Build the app
+# Build the React application
 RUN npm run build
 
-# Expose port
+# Install serve globally to serve the built app
+RUN npm install -g serve
+
+# Expose port 3000
 EXPOSE 3000
 
-# Start the application
-CMD ["npm", "start"]
+# Start the application using serve
+CMD ["serve", "-s", "build", "-l", "3000"]

@@ -79,7 +79,16 @@ setup_backend() {
     # Install dependencies
     print_status "Installing Python dependencies..."
     pip install --upgrade pip
-    pip install -r requirements.txt
+    
+    # Use simplified requirements for better compatibility
+    if [ -f "requirements-simple.txt" ]; then
+        print_status "Using simplified requirements for compatibility..."
+        pip install -r requirements-simple.txt
+    elif [ -f "requirements-dev.txt" ]; then
+        pip install -r requirements-dev.txt
+    else
+        pip install -r requirements.txt
+    fi
     
     # Create environment file
     if [ ! -f ".env" ]; then
