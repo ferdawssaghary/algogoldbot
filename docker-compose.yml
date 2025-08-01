@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15
+    container_name: gold_trading_db
+    environment:
+      POSTGRES_USER: goldtrader
+      POSTGRES_PASSWORD: securepassword123
+      POSTGRES_DB: gold_trading_bot
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+    networks:
+      - trading_network
+
+  # Backend API Service
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: gold_trading_backend
+    environment:
+      - DATABASE_URL=postgresql://goldtrader:securepassword123@postgres:5432/gold_trading_bot
+      - MT5_SERVER=LiteFinance-Demo
+      - TELEGRAM_BOT_TOKEN=8348419204:AAEEr0DQfcBmwwWssvTu-ljg94C19qUPim8
+      - TELEGRAM_CHAT_ID=-1002481438774
+      - SECRET_KEY=your-super-secure-secret-key-here
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+    volumes:
+      - ./backend:/app
+      - mt5_data:/app/mt5_data
+    restart: unless-stopped
+    networks:
+      - trading_network
+
+  # Frontend React Application
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: gold_trading_frontend
+    environment:
+      - REACT_APP_API_URL=http://backend:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    restart: unless-stopped
+    networks:
+      - trading_network
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: gold_trading_nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/ssl:/etc/nginx/ssl
+    depends_on:
+      - frontend
+      - backend
+    restart: unless-stopped
+    networks:
+      - trading_network
+
+volumes:
+  postgres_data:
+  mt5_data:
+
+networks:
+  trading_network:
+    driver: bridge
