@@ -99,6 +99,10 @@ docker-compose logs -f
 docker-compose down
 ```
 
+**🐛 Docker Issues?** If you encounter Docker problems:
+- **Quick fix**: Use `./dev-setup.sh` for development without Docker
+- **Detailed solutions**: See `DOCKER_SETUP.md` for troubleshooting
+
 ### 4. Access the Application
 - **Web Interface**: http://localhost
 - **API Documentation**: http://localhost/api/docs

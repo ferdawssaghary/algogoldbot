@@ -32,19 +32,31 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Check if Docker is installed
+# Check if Docker is installed and running
 check_docker() {
     if ! command -v docker &> /dev/null; then
         print_error "Docker is not installed. Please install Docker first."
+        print_status "See DOCKER_SETUP.md for installation instructions"
         exit 1
     fi
     
-    if ! command -v docker-compose &> /dev/null; then
+    if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
         print_error "Docker Compose is not installed. Please install Docker Compose first."
+        print_status "See DOCKER_SETUP.md for installation instructions"
         exit 1
     fi
     
-    print_success "Docker and Docker Compose are installed"
+    # Check if Docker daemon is running
+    if ! docker info &> /dev/null; then
+        print_error "Docker daemon is not running. Please start Docker first."
+        print_status "Solutions:"
+        print_status "  - Windows: Start Docker Desktop"
+        print_status "  - Linux: sudo systemctl start docker"
+        print_status "  - See DOCKER_SETUP.md for detailed instructions"
+        exit 1
+    fi
+    
+    print_success "Docker and Docker Compose are installed and running"
 }
 
 # Create .env file if it doesn't exist
