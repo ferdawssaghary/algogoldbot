@@ -4,7 +4,6 @@ import asyncio
 import logging
 from typing import Optional, Dict, List, Any
 from datetime import datetime, timedelta
-import MetaTrader5 as mt5
 import pandas as pd
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +13,15 @@ from app.models.trading import MT5Account, MarketData, Trade
 from app.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
+
+# Try to import MetaTrader5, fallback to None if not available
+try:
+    import MetaTrader5 as mt5
+    MT5_AVAILABLE = True
+except ImportError:
+    mt5 = None
+    MT5_AVAILABLE = False
+    logger.warning("MetaTrader5 package not available. Running in mock mode.")
 
 class MT5Service:
     """MetaTrader 5 integration service"""
@@ -26,6 +34,11 @@ class MT5Service:
         
     async def initialize(self) -> bool:
         """Initialize MT5 connection"""
+        if not MT5_AVAILABLE:
+            logger.warning("MT5 not available, running in mock mode")
+            self.is_initialized = True
+            return True
+            
         try:
             if not mt5.initialize():
                 logger.error(f"MT5 initialize() failed, error code: {mt5.last_error()}")
@@ -44,6 +57,22 @@ class MT5Service:
         try:
             if not self.is_initialized:
                 await self.initialize()
+            
+            if not MT5_AVAILABLE:
+                # Mock connection for development
+                self.current_account = {
+                    'login': login,
+                    'server': server,
+                    'name': 'Mock Account',
+                    'balance': 10000.0,
+                    'equity': 10000.0,
+                    'margin': 0.0,
+                    'free_margin': 10000.0,
+                    'margin_level': 0.0,
+                    'currency': 'USD'
+                }
+                logger.info(f"Mock MT5 connection established for account: {login}")
+                return True
             
             # Decrypt password
             decrypted_password = decrypt_sensitive_data(password)
@@ -85,7 +114,8 @@ class MT5Service:
         """Disconnect from MT5"""
         try:
             if self.is_initialized:
-                mt5.shutdown()
+                if MT5_AVAILABLE:
+                    mt5.shutdown()
                 self.is_initialized = False
                 self.current_account = None
                 logger.info("MT5 disconnected successfully")
@@ -97,6 +127,9 @@ class MT5Service:
         if not self.is_initialized:
             return False
         
+        if not MT5_AVAILABLE:
+            return self.current_account is not None
+        
         account_info = mt5.account_info()
         return account_info is not None
     
@@ -105,6 +138,21 @@ class MT5Service:
         try:
             if not self.is_connected():
                 return None
+            
+            if not MT5_AVAILABLE:
+                # Return mock account info
+                return {
+                    'login': self.current_account['login'],
+                    'balance': self.current_account['balance'],
+                    'equity': self.current_account['equity'],
+                    'margin': self.current_account['margin'],
+                    'free_margin': self.current_account['free_margin'],
+                    'margin_level': self.current_account['margin_level'],
+                    'profit': 0.0,
+                    'currency': self.current_account['currency'],
+                    'leverage': 100,
+                    'timestamp': datetime.now()
+                }
             
             account_info = mt5.account_info()
             if account_info is None:
@@ -133,6 +181,22 @@ class MT5Service:
             if not self.is_connected():
                 return None
             
+            if not MT5_AVAILABLE:
+                # Return mock symbol info
+                return {
+                    'symbol': symbol,
+                    'bid': 2000.0,
+                    'ask': 2000.5,
+                    'spread': 0.5,
+                    'point': 0.01,
+                    'digits': 2,
+                    'trade_mode': 4,
+                    'min_lot': 0.01,
+                    'max_lot': 100.0,
+                    'lot_step': 0.01,
+                    'timestamp': datetime.now()
+                }
+            
             symbol_info = mt5.symbol_info(symbol)
             if symbol_info is None:
                 return None
@@ -160,6 +224,18 @@ class MT5Service:
         try:
             if not self.is_connected():
                 return None
+            
+            if not MT5_AVAILABLE:
+                # Return mock market data
+                return {
+                    'symbol': symbol,
+                    'bid': 2000.0,
+                    'ask': 2000.5,
+                    'last': 2000.25,
+                    'volume': 1000,
+                    'time': datetime.now(),
+                    'timestamp': datetime.now()
+                }
             
             tick = mt5.symbol_info_tick(symbol)
             if tick is None:
@@ -194,6 +270,25 @@ class MT5Service:
             if not self.is_connected():
                 logger.error("Not connected to MT5")
                 return None
+            
+            if not MT5_AVAILABLE:
+                # Mock order placement
+                import random
+                ticket = random.randint(100000, 999999)
+                current_price = 2000.0 if price is None else price
+                
+                return {
+                    'retcode': 10009,  # TRADE_RETCODE_DONE
+                    'ticket': ticket,
+                    'order': ticket,
+                    'volume': lot_size,
+                    'price': current_price,
+                    'bid': current_price - 0.5,
+                    'ask': current_price + 0.5,
+                    'comment': comment,
+                    'request_id': ticket,
+                    'retcode_external': 0
+                }
             
             # Prepare order request
             order_type_mapping = {
@@ -272,6 +367,11 @@ class MT5Service:
             if not self.is_connected():
                 return False
             
+            if not MT5_AVAILABLE:
+                # Mock position closing
+                logger.info(f"Mock: Position {ticket} closed successfully")
+                return True
+            
             # Get position info
             position = mt5.positions_get(ticket=ticket)
             if not position:
@@ -315,6 +415,10 @@ class MT5Service:
             if not self.is_connected():
                 return []
             
+            if not MT5_AVAILABLE:
+                # Return mock positions
+                return []
+            
             positions = mt5.positions_get(symbol=symbol)
             if positions is None:
                 return []
@@ -350,6 +454,10 @@ class MT5Service:
         """Get trade history"""
         try:
             if not self.is_connected():
+                return []
+            
+            if not MT5_AVAILABLE:
+                # Return mock trade history
                 return []
             
             if date_from is None:
@@ -393,6 +501,24 @@ class MT5Service:
         try:
             if not self.is_connected():
                 return None
+            
+            if not MT5_AVAILABLE:
+                # Return mock price data
+                import numpy as np
+                dates = pd.date_range(end=datetime.now(), periods=count, freq='H')
+                base_price = 2000.0
+                prices = base_price + np.cumsum(np.random.randn(count) * 0.5)
+                
+                df = pd.DataFrame({
+                    'time': dates,
+                    'open': prices,
+                    'high': prices + np.random.rand(count) * 2,
+                    'low': prices - np.random.rand(count) * 2,
+                    'close': prices + np.random.randn(count) * 0.5,
+                    'tick_volume': np.random.randint(100, 1000, count)
+                })
+                df.set_index('time', inplace=True)
+                return df
             
             timeframe_mapping = {
                 'M1': mt5.TIMEFRAME_M1,
