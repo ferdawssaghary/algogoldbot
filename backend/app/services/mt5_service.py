@@ -1,4 +1,16 @@
-"""MetaTrader 5 integration service"""
+"""MetaTrader 5 integration service
+
+Note: The MetaTrader5 Python package is not available on PyPI and requires
+the MetaTrader 5 terminal to be installed on the system. For production use,
+you need to:
+
+1. Install MetaTrader 5 terminal on your system
+2. Download the MetaTrader5 Python package from the official MetaQuotes website
+3. Install it manually: pip install MetaTrader5-5.0.45.0.tar.gz
+
+For development and testing, this service runs in mock mode when the package
+is not available.
+"""
 
 import asyncio
 import logging
@@ -18,6 +30,7 @@ logger = setup_logger(__name__)
 try:
     import MetaTrader5 as mt5
     MT5_AVAILABLE = True
+    logger.info("MetaTrader5 package loaded successfully")
 except ImportError:
     mt5 = None
     MT5_AVAILABLE = False
