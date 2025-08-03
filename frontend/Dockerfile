@@ -18,5 +18,8 @@ RUN npm run build
 # Expose port
 EXPOSE 3000
 
+# Install serve to serve static files
+RUN npm install -g serve
+
 # Start the application
-CMD ["npm", "start"]
+CMD ["serve", "-s", "build", "-l", "3000"]
