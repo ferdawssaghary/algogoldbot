@@ -35,7 +35,6 @@ services:
     depends_on:
       - postgres
     volumes:
-      - ./backend:/app
       - mt5_data:/app/mt5_data
     restart: unless-stopped
     networks:
@@ -54,7 +53,6 @@ services:
     depends_on:
       - backend
     volumes:
-      - ./frontend:/app
       - /app/node_modules
     restart: unless-stopped
     networks:
