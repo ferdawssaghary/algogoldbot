@@ -1,5 +1,6 @@
 """Database configuration and session management"""
 
+import asyncio
 from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
@@ -38,19 +39,28 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             await session.close()
 
 async def init_db() -> None:
-    """Initialize database tables"""
-    try:
-        # Import all models to ensure they are registered
-        
-        # Create all tables
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-            
-        print("Database tables created successfully")
-        
-    except Exception as e:
-        print(f"Error initializing database: {e}")
-        raise
+    """Initialize database tables with retry until Postgres is ready"""
+    # Import models inside function to avoid circulars
+    from app.models.user import User  # noqa: F401
+    from app.models.trading import (  # noqa: F401
+        MT5Account, BotSettings, AccountStatus, TradingSignal,
+        Trade, SigGolEntry, JournalEntry, SystemLog,
+        TelegramNotification, MarketData, PerformanceMetrics
+    )
+    
+    last_err = None
+    for attempt in range(1, 11):
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            print("Database tables created successfully")
+            return
+        except Exception as e:
+            last_err = e
+            print(f"Database not ready (attempt {attempt}/10): {e}")
+            await asyncio.sleep(3)
+    # If we get here, retries exhausted
+    raise RuntimeError(f"Failed to initialize database after retries: {last_err}")
 
 async def close_db() -> None:
     """Close database connections"""
