@@ -10,7 +10,7 @@ from app.services.telegram_service import TelegramService
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from sqlalchemy import select
-from app.models.trading import BotSettings
+from app.models.trading import BotSettings, Trade
 
 logger = setup_logger(__name__)
 
@@ -197,6 +197,26 @@ class TradingEngine:
             ticket = int(result.get("ticket")) if result.get("ticket") else None
             if ticket:
                 self.user_tracked_tickets.setdefault(user_id, set()).add(ticket)
+            # Persist trade entry
+            try:
+                trade = Trade(
+                    user_id=user_id,
+                    mt5_ticket=ticket,
+                    signal_id=None,
+                    trade_type=order_type,
+                    symbol="XAUUSD",
+                    lot_size=lot_size,
+                    open_price=price,
+                    stop_loss=sl,
+                    take_profit=tp,
+                    status="OPEN",
+                    comment="EMA12/26+RSI14"
+                )
+                db_session.add(trade)
+                await db_session.commit()
+            except Exception as pe:
+                await db_session.rollback()
+                await self.telegram_service.send_error(f"Persist trade error ticket {ticket}: {pe}")
             # Basic exit detection placeholder (to be extended with polling open positions and matching)
             # For now, rely on trade history checks in a separate loop if implemented, then:
             # await self.telegram_service.send_notification("CLOSE XAUUSD ...", "trade_exit")
@@ -248,7 +268,16 @@ class TradingEngine:
                     # For each closed ticket, try to fetch closing info
                     for t in closed:
                         try:
-                            history = await self.mt5_service.get_trade_history(symbol="XAUUSD")
+                            # Narrow history search window using DB trade open_time
+                            from sqlalchemy import select as sa_select
+                            async with AsyncSessionLocal() as s:
+                                res = await s.execute(sa_select(Trade).where(Trade.user_id == user_id, Trade.mt5_ticket == t))
+                                trade: Trade | None = res.scalar_one_or_none()
+                                date_from = None
+                                if trade and trade.open_time:
+                                    from datetime import timedelta
+                                    date_from = trade.open_time - timedelta(hours=2)
+                            history = await self.mt5_service.get_trade_history(symbol="XAUUSD", date_from=date_from)
                             # Prefer OUT deals for the ticket
                             deals = [d for d in history if int(d.get("order", 0)) == t or int(d.get("ticket", 0)) == t]
                             out_deals = [d for d in deals if (d.get("entry") == 'OUT' or d.get("entry") == 'OUT_BY')]
@@ -259,6 +288,20 @@ class TradingEngine:
                                 volume = float(deal.get("volume", 0.0))
                                 comment = deal.get("comment") or ''
                                 msg = f"Closed XAUUSD ticket {t} @ {price:.2f} vol {volume:.2f} P/L {profit:.2f} {comment}"
+                                # Update DB trade
+                                try:
+                                    async with AsyncSessionLocal() as s2:
+                                        res2 = await s2.execute(sa_select(Trade).where(Trade.user_id == user_id, Trade.mt5_ticket == t))
+                                        tr = res2.scalar_one_or_none()
+                                        if tr:
+                                            tr.close_price = price
+                                            tr.profit = profit
+                                            tr.status = "CLOSED"
+                                            from datetime import datetime as dt
+                                            tr.close_time = deal.get("time") if isinstance(deal.get("time"), dt) else dt.utcnow()
+                                            await s2.commit()
+                                except Exception as ue:
+                                    await self.telegram_service.send_error(f"Persist exit error {t}: {ue}")
                             else:
                                 msg = f"Closed XAUUSD ticket {t} (details unavailable)"
                             await self.telegram_service.send_notification(msg, "trade_exit")
