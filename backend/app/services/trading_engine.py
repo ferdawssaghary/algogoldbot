@@ -148,13 +148,20 @@ class TradingEngine:
         """Update account status"""
         try:
             info = await self.mt5_service.get_account_info()
-            if not info:
+            md = await self.mt5_service.get_market_data("XAUUSD")
+            if not info and not md:
                 return
             payload = {
                 "type": "account_status",
-                "balance": float(info.get("balance", 0.0)),
-                "equity": float(info.get("equity", 0.0)),
-                "profit": float(info.get("profit", 0.0)),
+                "balance": float(info.get("balance", 0.0)) if info else None,
+                "equity": float(info.get("equity", 0.0)) if info else None,
+                "profit": float(info.get("profit", 0.0)) if info else None,
+                "tick": {
+                    "symbol": md.get("symbol") if md else None,
+                    "bid": float(md.get("bid")) if md else None,
+                    "ask": float(md.get("ask")) if md else None,
+                    "time": (md.get("time").isoformat() if hasattr(md.get("time"), 'isoformat') else None) if md else None
+                },
                 "timestamp": datetime.utcnow().isoformat()
             }
             for user_id, clients in list(self.user_websocket_clients.items()):
