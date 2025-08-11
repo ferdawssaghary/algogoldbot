@@ -38,7 +38,7 @@ input string   WebSocketURL     = "ws://localhost:8000/ws/mt5"; // WebSocket URL
 input bool     EnableWebSocket  = true;     // Enable WebSocket communication
 
 //--- Global variables
-string symbol = "XAUUSD";
+string EA_Symbol = "XAUUSD";
 double point_value;
 int daily_trades_count = 0;
 datetime last_trade_date = 0;
@@ -59,12 +59,12 @@ COrderInfo order;
 int OnInit()
 {
     // Set symbol and point value
-    point_value = SymbolInfoDouble(symbol, SYMBOL_POINT);
+    point_value = SymbolInfoDouble(EA_Symbol, SYMBOL_POINT);
     
     // Initialize indicators
-    fast_ma_handle = iMA(symbol, TimeFrame, FastMA, 0, MODE_EMA, PRICE_CLOSE);
-    slow_ma_handle = iMA(symbol, TimeFrame, SlowMA, 0, MODE_EMA, PRICE_CLOSE);
-    rsi_handle = iRSI(symbol, TimeFrame, RSI_Period, PRICE_CLOSE);
+    fast_ma_handle = iMA(EA_Symbol, TimeFrame, FastMA, 0, MODE_EMA, PRICE_CLOSE);
+    slow_ma_handle = iMA(EA_Symbol, TimeFrame, SlowMA, 0, MODE_EMA, PRICE_CLOSE);
+    rsi_handle = iRSI(EA_Symbol, TimeFrame, RSI_Period, PRICE_CLOSE);
     
     if(fast_ma_handle == INVALID_HANDLE || slow_ma_handle == INVALID_HANDLE || rsi_handle == INVALID_HANDLE)
     {
@@ -75,7 +75,7 @@ int OnInit()
     // Set trade parameters
     trade.SetExpertMagicNumber(MagicNumber);
     trade.SetMarginMode();
-    trade.SetTypeFillingBySymbol(symbol);
+    trade.SetTypeFillingBySymbol(EA_Symbol);
     trade.SetDeviationInPoints(Slippage);
     
     // Initialize WebSocket connection
@@ -113,11 +113,11 @@ void OnDeinit(const int reason)
 void OnTick()
 {
     // Check if trading is allowed
-    if(!IsTradeAllowed() || !IsMarketOpen() || !IsWithinTradingHours())
+    if(!(TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) && MQLInfoInteger(MQL_TRADE_ALLOWED)) || !IsMarketOpen() || !IsWithinTradingHours())
         return;
     
     // Check spread
-    double spread = SymbolInfoInteger(symbol, SYMBOL_SPREAD) * point_value / point_value;
+    double spread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD) * point_value / point_value;
     if(spread > MaxSpread)
     {
         Comment("Spread too high: ", spread);
@@ -139,8 +139,8 @@ void OnTick()
     }
     
     // Get current market data
-    double ask = SymbolInfoDouble(symbol, SYMBOL_ASK);
-    double bid = SymbolInfoDouble(symbol, SYMBOL_BID);
+    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
     
     // Analyze market and generate signals
     int signal = AnalyzeMarket();
@@ -207,7 +207,7 @@ void OpenBuyOrder(double price)
     double sl = price - StopLoss * point_value * 10;
     double tp = price + TakeProfit * point_value * 10;
     
-    if(trade.Buy(LotSize, symbol, price, sl, tp, "Gold Bot Buy"))
+    if(trade.Buy(LotSize, EA_Symbol, price, sl, tp, "Gold Bot Buy"))
     {
         daily_trades_count++;
         Print("Buy order opened at ", price, " SL: ", sl, " TP: ", tp);
@@ -232,7 +232,7 @@ void OpenSellOrder(double price)
     double sl = price + StopLoss * point_value * 10;
     double tp = price - TakeProfit * point_value * 10;
     
-    if(trade.Sell(LotSize, symbol, price, sl, tp, "Gold Bot Sell"))
+    if(trade.Sell(LotSize, EA_Symbol, price, sl, tp, "Gold Bot Sell"))
     {
         daily_trades_count++;
         Print("Sell order opened at ", price, " SL: ", sl, " TP: ", tp);
@@ -256,7 +256,7 @@ bool HasOpenPosition(ENUM_ORDER_TYPE type)
 {
     for(int i = 0; i < PositionsTotal(); i++)
     {
-        if(position.SelectByIndex(i) && position.Symbol() == symbol && position.Magic() == MagicNumber)
+        if(position.SelectByIndex(i) && position.Symbol() == EA_Symbol && position.Magic() == MagicNumber)
         {
             if((type == ORDER_TYPE_BUY && position.PositionType() == POSITION_TYPE_BUY) ||
                (type == ORDER_TYPE_SELL && position.PositionType() == POSITION_TYPE_SELL))
@@ -286,7 +286,7 @@ bool IsWithinTradingHours()
 //+------------------------------------------------------------------+
 bool IsMarketOpen()
 {
-    return SymbolInfoInteger(symbol, SYMBOL_TRADE_MODE) == SYMBOL_TRADE_MODE_FULL;
+    return SymbolInfoInteger(EA_Symbol, SYMBOL_TRADE_MODE) == SYMBOL_TRADE_MODE_FULL;
 }
 
 //+------------------------------------------------------------------+
@@ -328,13 +328,13 @@ void CloseWebSocket()
 //+------------------------------------------------------------------+
 void SendMarketData()
 {
-    double bid = SymbolInfoDouble(symbol, SYMBOL_BID);
-    double ask = SymbolInfoDouble(symbol, SYMBOL_ASK);
+    double bid = SymbolInfoDouble(EA_Symbol, SYMBOL_BID);
+    double ask = SymbolInfoDouble(EA_Symbol, SYMBOL_ASK);
     double spread = ask - bid;
     
     // Create JSON-like string for market data
     string data = StringFormat("{\"type\":\"market_data\",\"symbol\":\"%s\",\"bid\":%.5f,\"ask\":%.5f,\"spread\":%.5f,\"timestamp\":%d}",
-                              symbol, bid, ask, spread, TimeCurrent());
+                              EA_Symbol, bid, ask, spread, TimeCurrent());
     
     // Send data (implementation depends on WebSocket library)
     Print("Market data: ", data);
@@ -346,7 +346,7 @@ void SendMarketData()
 void SendTradeNotification(string trade_type, double price, double sl, double tp)
 {
     string data = StringFormat("{\"type\":\"trade_opened\",\"trade_type\":\"%s\",\"symbol\":\"%s\",\"price\":%.5f,\"sl\":%.5f,\"tp\":%.5f,\"timestamp\":%d}",
-                              trade_type, symbol, price, sl, tp, TimeCurrent());
+                              trade_type, EA_Symbol, price, sl, tp, TimeCurrent());
     
     // Send notification (implementation depends on WebSocket library)
     Print("Trade notification: ", data);
