@@ -53,13 +53,35 @@ const Dashboard: React.FC = () => {
     fetchPrice();
   }, [timeframe]);
 
+  const tfToSeconds = (tf: string) => {
+    switch (tf) {
+      case 'M1': return 60;
+      case 'M5': return 300;
+      case 'M15': return 900;
+      case 'M30': return 1800;
+      case 'H1': return 3600;
+      case 'H4': return 14400;
+      case 'D1': return 86400;
+      default: return 900;
+    }
+  };
+
   useEffect(() => {
     if (lastTick?.time && typeof lastTick.ask === 'number' && seriesRef.current) {
-      const t = Math.floor(new Date(lastTick.time).getTime() / 1000) as Time;
-      // Update last candle close to latest tick
-      seriesRef.current.update({ time: t, open: lastTick.ask, high: lastTick.ask, low: lastTick.ask, close: lastTick.ask });
+      const tSec = Math.floor(new Date(lastTick.time).getTime() / 1000);
+      const bucket = Math.floor(tSec / tfToSeconds(timeframe)) * tfToSeconds(timeframe);
+      const last = candles[candles.length - 1];
+      if (!last || (last.time as number) < bucket) {
+        const c = { time: bucket as Time, open: lastTick.ask, high: lastTick.ask, low: lastTick.ask, close: lastTick.ask };
+        setCandles(prev => [...prev, c]);
+        seriesRef.current.update(c);
+      } else {
+        const updated = { ...last, high: Math.max(last.high, lastTick.ask), low: Math.min(last.low, lastTick.ask), close: lastTick.ask };
+        setCandles(prev => [...prev.slice(0, -1), updated]);
+        seriesRef.current.update(updated);
+      }
     }
-  }, [lastTick]);
+  }, [lastTick, timeframe, candles]);
 
   useEffect(() => {
     if (!chartRef.current) return;

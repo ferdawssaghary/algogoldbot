@@ -8,6 +8,9 @@ from app.utils.logger import setup_logger
 from app.services.mt5_service import MT5Service
 from app.services.telegram_service import TelegramService
 from app.core.config import settings
+from app.core.database import AsyncSessionLocal
+from sqlalchemy import select
+from app.models.trading import BotSettings
 
 logger = setup_logger(__name__)
 
@@ -113,63 +116,67 @@ class TradingEngine:
             if not order_type:
                 return
 
-            # Place order using default risk params
-            stop_loss_pips = settings.DEFAULT_STOP_LOSS or 50
-            take_profit_pips = settings.DEFAULT_TAKE_PROFIT or 100
-            max_spread_pips = settings.MAX_SPREAD or 5.0
-            risk_pct = settings.RISK_PERCENTAGE or 2.0
-
-            # Get current market/symbol info to compute sl/tp and risk-based lot
-            md = await self.mt5_service.get_market_data("XAUUSD")
-            sym = await self.mt5_service.get_symbol_info("XAUUSD")
-            if not md or not sym:
-                return
-            bid = float(md.get("bid"))
-            ask = float(md.get("ask"))
-            price = ask if order_type == "BUY" else bid
-
-            # Max spread filter (in pips)
-            current_spread_pips = abs(ask - bid) / (sym.get("point") or 0.01)
-            if current_spread_pips > max_spread_pips:
-                logger.debug(f"Spread too high: {current_spread_pips:.2f} pips > {max_spread_pips}")
-                return
-
-            pip_value = sym.get("point") or 0.01
-            sl = price - stop_loss_pips * pip_value if order_type == "BUY" else price + stop_loss_pips * pip_value
-            tp = price + take_profit_pips * pip_value if order_type == "BUY" else price - take_profit_pips * pip_value
-
-            # Risk-based lot sizing: risk_amount = balance * risk_pct; per-pip value ~ tick_value / (point_value)
-            acct = await self.mt5_service.get_account_info()
-            balance = float(acct.get("balance", 0.0)) if acct else 0.0
-            tick_value = float(sym.get("tick_value") or 1.0)
-            point = float(sym.get("point") or 0.01)
-            per_pip_value_per_lot = tick_value / (point / 0.01)  # normalize to pip
-            risk_amount = balance * (risk_pct / 100.0)
-            sl_pips = float(stop_loss_pips)
-            lot_size = max(0.01, min(100.0, risk_amount / (sl_pips * per_pip_value_per_lot + 1e-6)))
-            # round lot to step
-            lot_step = float(sym.get("lot_step") or 0.01)
-            lot_size = max(lot_step, (round(lot_size / lot_step) * lot_step))
- 
-            result = await self.mt5_service.place_order(
-                symbol="XAUUSD",
-                order_type=order_type,
-                lot_size=lot_size,
-                price=None,
-                stop_loss=sl,
-                take_profit=tp,
-                comment="EMA12/26 + RSI14"
-            )
-            if result:
-                self.trades_today_count += 1
-                await self.telegram_service.send_notification(
-                    f"{order_type} XAUUSD @ {price:.2f} SL {sl:.2f} TP {tp:.2f} (RSI {rsi_last:.1f})",
-                    "trade_entry"
-                )
-            
+            # For each active user, apply their settings
+            async with AsyncSessionLocal() as session:
+                for user_id in list(self.active_users):
+                    try:
+                        await self._execute_signal_for_user(session, user_id, order_type)
+                    except Exception as ue:
+                        await self.telegram_service.send_error(f"User {user_id} trade error: {ue}")
         except Exception as e:
             logger.error(f"Error checking signals: {e}")
-    
+            await self.telegram_service.send_error(f"Signal loop error: {e}")
+
+    async def _execute_signal_for_user(self, db_session, user_id: int, order_type: str) -> None:
+        result = await db_session.execute(select(BotSettings).where(BotSettings.user_id == user_id))
+        s: BotSettings | None = result.scalar_one_or_none()
+        stop_loss_pips = int(s.stop_loss_pips) if s else (settings.DEFAULT_STOP_LOSS or 50)
+        take_profit_pips = int(s.take_profit_pips) if s else (settings.DEFAULT_TAKE_PROFIT or 100)
+        max_spread_pips = float(getattr(s, 'max_spread', settings.MAX_SPREAD)) if s else (settings.MAX_SPREAD or 5.0)
+        risk_pct = float(s.risk_percentage) if s else (settings.RISK_PERCENTAGE or 2.0)
+
+        md = await self.mt5_service.get_market_data("XAUUSD")
+        sym = await self.mt5_service.get_symbol_info("XAUUSD")
+        if not md or not sym:
+            return
+        bid = float(md.get("bid"))
+        ask = float(md.get("ask"))
+        price = ask if order_type == "BUY" else bid
+        current_spread_pips = abs(ask - bid) / (sym.get("point") or 0.01)
+        if current_spread_pips > max_spread_pips:
+            return
+
+        pip_value = sym.get("point") or 0.01
+        sl = price - stop_loss_pips * pip_value if order_type == "BUY" else price + stop_loss_pips * pip_value
+        tp = price + take_profit_pips * pip_value if order_type == "BUY" else price - take_profit_pips * pip_value
+
+        acct = await self.mt5_service.get_account_info()
+        balance = float(acct.get("balance", 0.0)) if acct else 0.0
+        tick_value = float(sym.get("tick_value") or 1.0)
+        point = float(sym.get("point") or 0.01)
+        per_pip_value_per_lot = tick_value / (point / 0.01)
+        risk_amount = balance * (risk_pct / 100.0)
+        sl_pips = float(stop_loss_pips)
+        lot_size = max(0.01, min(100.0, risk_amount / (sl_pips * per_pip_value_per_lot + 1e-6)))
+        lot_step = float(sym.get("lot_step") or 0.01)
+        lot_size = max(lot_step, (round(lot_size / lot_step) * lot_step))
+
+        result = await self.mt5_service.place_order(
+            symbol="XAUUSD",
+            order_type=order_type,
+            lot_size=lot_size,
+            price=None,
+            stop_loss=sl,
+            take_profit=tp,
+            comment="EMA12/26 + RSI14"
+        )
+        if result:
+            self.trades_today_count += 1
+            await self.telegram_service.send_notification(
+                f"{order_type} XAUUSD @ {price:.2f} SL {sl:.2f} TP {tp:.2f} (risk {risk_pct:.1f}%)",
+                "trade_entry"
+            )
+
     async def _update_account_status(self) -> None:
         """Update account status"""
         try:

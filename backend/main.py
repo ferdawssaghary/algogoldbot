@@ -46,7 +46,7 @@ async def lifespan(app: FastAPI):
         
         # Initialize services
         mt5_service = MT5Service()
-        telegram_service = TelegramService()
+        telegram_service = TelegramService(mt5_service)
         trading_engine = TradingEngine(mt5_service, telegram_service)
         
         # Expose services via app state for routers

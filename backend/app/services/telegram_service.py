@@ -1,7 +1,7 @@
 """Telegram Service for notifications"""
 
 import asyncio
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from app.utils.logger import setup_logger
 from app.core.config import settings
@@ -9,14 +9,19 @@ import httpx
 
 logger = setup_logger(__name__)
 
+if TYPE_CHECKING:
+    from app.services.mt5_service import MT5Service
+
 class TelegramService:
     """Telegram bot service for notifications"""
     
-    def __init__(self):
+    def __init__(self, mt5_service: Optional["MT5Service"] = None):
         self.bot_token = settings.TELEGRAM_BOT_TOKEN
         self.chat_id = settings.TELEGRAM_CHAT_ID
         self.is_running = False
         self.notification_task: Optional[asyncio.Task] = None
+        self.mt5_service = mt5_service
+        self._last_summary_date: Optional[str] = None
         
     async def start(self) -> None:
         """Start the telegram service"""
@@ -54,6 +59,13 @@ class TelegramService:
             try:
                 # Check for notifications
                 await self._check_notifications()
+                # Daily summary at 23:59 UTC
+                from datetime import datetime as dt
+                now = dt.utcnow()
+                today_str = now.strftime('%Y-%m-%d')
+                if now.hour == 23 and now.minute >= 59 and self._last_summary_date != today_str:
+                    await self._send_daily_summary()
+                    self._last_summary_date = today_str
                 
                 # Wait before next iteration
                 await asyncio.sleep(30)  # Check every 30 seconds
@@ -100,6 +112,26 @@ class TelegramService:
     async def send_notification(self, message: str, event_type: str = "info") -> bool:
         """Compatibility method used by the main app to send notifications"""
         return await self.send_message(f"[{event_type}] {message}")
+    
+    async def send_error(self, message: str) -> bool:
+        return await self.send_notification(message, "error")
+
+    async def _send_daily_summary(self) -> None:
+        try:
+            if not self.mt5_service:
+                return
+            info = await self.mt5_service.get_account_info()
+            if not info:
+                return
+            msg = (
+                f"Daily Summary\n"
+                f"Balance: {float(info.get('balance', 0.0)):.2f}\n"
+                f"Equity: {float(info.get('equity', 0.0)):.2f}\n"
+                f"Profit: {float(info.get('profit', 0.0)):.2f}"
+            )
+            await self.send_notification(msg, "daily_summary")
+        except Exception as e:
+            logger.error(f"Error sending daily summary: {e}")
     
     def is_active(self) -> bool:
         """Check if telegram service is active"""
