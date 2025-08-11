@@ -23,6 +23,12 @@ class TradingSettingsIn(BaseModel):
     custom_tick_value: float | None = Field(None)
     custom_point: float | None = Field(None)
 
+class TestOrderIn(BaseModel):
+    side: str = Field(..., pattern="^(BUY|SELL)$")
+    lot_size: float = Field(0.01, gt=0)
+    sl_pips: int = Field(50, ge=1)
+    tp_pips: int = Field(100, ge=1)
+
 @router.get("/settings")
 async def get_trading_settings(
     current_user: User = Depends(get_current_user),
@@ -110,3 +116,38 @@ async def stop_trading(
     if not engine:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Trading engine unavailable")
     return await engine.stop_trading(current_user.id, db)
+
+@router.post("/test-order")
+async def test_order(
+    request: Request,
+    payload: TestOrderIn,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    mt5 = getattr(request.app.state, "mt5_service", None)
+    if not mt5:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="MT5 service unavailable")
+    # Market snapshot
+    md = await mt5.get_market_data("XAUUSD")
+    sym = await mt5.get_symbol_info("XAUUSD")
+    if not md or not sym:
+        raise HTTPException(status_code=400, detail="Market data unavailable")
+    bid = float(md.get("bid"))
+    ask = float(md.get("ask"))
+    point = float(sym.get("point") or 0.01)
+    price = ask if payload.side == "BUY" else bid
+    sl = price - payload.sl_pips * point if payload.side == "BUY" else price + payload.sl_pips * point
+    tp = price + payload.tp_pips * point if payload.side == "BUY" else price - payload.tp_pips * point
+    # Place order
+    res = await mt5.place_order(
+        symbol="XAUUSD",
+        order_type=payload.side,
+        lot_size=payload.lot_size,
+        price=None,
+        stop_loss=sl,
+        take_profit=tp,
+        comment="Test order from UI"
+    )
+    if not res:
+        raise HTTPException(status_code=400, detail="Order placement failed")
+    return {"success": True, "result": res}
