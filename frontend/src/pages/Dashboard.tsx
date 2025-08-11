@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Container, Typography, Grid, Card, CardContent } from '@mui/material';
+import { Container, Typography, Grid, Card, CardContent, MenuItem, Select, FormControl, InputLabel, Stack } from '@mui/material';
 import { useLanguage } from '../contexts/LanguageContext';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { useWebSocket } from '../contexts/WebSocketContext';
@@ -11,6 +11,7 @@ const Dashboard: React.FC = () => {
   const { t } = useLanguage();
   const [data, setData] = useState<any>(null);
   const [priceSeries, setPriceSeries] = useState<Array<{ time: string; price: number }>>([]);
+  const [timeframe, setTimeframe] = useState<'M1' | 'M5' | 'M15' | 'M30' | 'H1' | 'H4' | 'D1'>('M15');
   const { lastTick } = useWebSocket();
 
   useEffect(() => {
@@ -28,19 +29,23 @@ const Dashboard: React.FC = () => {
     fetchData();
   }, []);
 
+  const loadPrice = async (tf: string) => {
+    try {
+      const res = await fetch(`${apiBase}/dashboard/price?symbol=XAUUSD&timeframe=${tf}&count=200`, { headers: { 'Content-Type': 'application/json', ...authHeader() } });
+      if (res.ok) {
+        const json = await res.json();
+        const series = (json.candles || []).map((c: any) => ({ time: c.time, price: c.close }));
+        setPriceSeries(series);
+      }
+    } catch {}
+  };
+
   useEffect(() => {
     const fetchPrice = async () => {
-      try {
-        const res = await fetch(`${apiBase}/dashboard/price?symbol=XAUUSD&timeframe=M15&count=100`, { headers: { 'Content-Type': 'application/json', ...authHeader() } });
-        if (res.ok) {
-          const json = await res.json();
-          const series = (json.candles || []).map((c: any) => ({ time: c.time, price: c.close }));
-          setPriceSeries(series);
-        }
-      } catch {}
+      await loadPrice(timeframe);
     };
     fetchPrice();
-  }, []);
+  }, [timeframe]);
 
   useEffect(() => {
     if (lastTick?.time && typeof lastTick.ask === 'number') {
@@ -80,7 +85,21 @@ const Dashboard: React.FC = () => {
         <Grid item xs={12}>
           <Card>
             <CardContent>
-              <Typography variant="h6" gutterBottom>Live XAUUSD Price</Typography>
+              <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
+                <Typography variant="h6">Live XAUUSD Price</Typography>
+                <FormControl size="small" sx={{ minWidth: 120 }}>
+                  <InputLabel id="tf-label">Timeframe</InputLabel>
+                  <Select labelId="tf-label" label="Timeframe" value={timeframe} onChange={(e) => setTimeframe(e.target.value as any)}>
+                    <MenuItem value="M1">M1</MenuItem>
+                    <MenuItem value="M5">M5</MenuItem>
+                    <MenuItem value="M15">M15</MenuItem>
+                    <MenuItem value="M30">M30</MenuItem>
+                    <MenuItem value="H1">H1</MenuItem>
+                    <MenuItem value="H4">H4</MenuItem>
+                    <MenuItem value="D1">D1</MenuItem>
+                  </Select>
+                </FormControl>
+              </Stack>
               <ResponsiveContainer width="100%" height={300}>
                 <LineChart data={priceSeries} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" />
