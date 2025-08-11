@@ -581,3 +581,39 @@ class MT5Service:
         except Exception as e:
             logger.error(f"Error getting price data: {e}")
             return None
+
+    async def get_orders_history(self, date_from: datetime = None, date_to: datetime = None) -> List[Dict[str, Any]]:
+        """Get orders history for robust correlation (if MT5 available)"""
+        try:
+            if not self.is_connected():
+                return []
+            if not MT5_AVAILABLE:
+                return []
+            if date_from is None:
+                date_from = datetime.now() - timedelta(days=30)
+            if date_to is None:
+                date_to = datetime.now()
+            orders = mt5.history_orders_get(date_from, date_to)
+            if orders is None:
+                return []
+            res = []
+            for o in orders:
+                res.append({
+                    'ticket': o.ticket,
+                    'symbol': o.symbol,
+                    'type': o.type,
+                    'volume_initial': o.volume_initial,
+                    'volume_current': o.volume_current,
+                    'price_open': o.price_open,
+                    'sl': o.sl,
+                    'tp': o.tp,
+                    'time_setup': datetime.fromtimestamp(o.time_setup),
+                    'time_done': datetime.fromtimestamp(o.time_done) if o.time_done else None,
+                    'reason': o.reason,
+                    'state': o.state,
+                    'comment': o.comment,
+                })
+            return res
+        except Exception as e:
+            logger.error(f"Error getting orders history: {e}")
+            return []

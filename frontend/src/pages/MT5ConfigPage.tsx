@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Container, Typography, TextField, Button, Stack, Paper } from '@mui/material';
+import { toast } from 'react-toastify';
 
 const apiBase = '/api';
 const authHeader = () => ({ 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` });
@@ -15,30 +16,52 @@ const MT5ConfigPage: React.FC = () => {
   const saveMt5 = async () => {
     setSaving(true);
     try {
-      await fetch(`${apiBase}/mt5/config`, {
+      const res = await fetch(`${apiBase}/mt5/config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeader() },
         body: JSON.stringify({ account_login: login, account_password: password, server_name: server })
       });
+      if (!res.ok) throw new Error('Failed to save MT5 config');
+      toast.success('MT5 configuration saved');
+    } catch (e: any) {
+      toast.error(e.message || 'MT5 save failed');
     } finally {
       setSaving(false);
     }
   };
 
   const connectMt5 = async () => {
-    await fetch(`${apiBase}/mt5/connect`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader() } });
+    try {
+      const r = await fetch(`${apiBase}/mt5/connect`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader() } });
+      if (!r.ok) throw new Error('Failed to connect MT5');
+      toast.success('MT5 connected');
+    } catch (e: any) {
+      toast.error(e.message || 'MT5 connect failed');
+    }
   };
 
   const saveTelegram = async () => {
-    await fetch(`${apiBase}/telegram/configure`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify({ bot_token: botToken, chat_id: chatId })
-    });
+    try {
+      const r = await fetch(`${apiBase}/telegram/configure`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify({ bot_token: botToken, chat_id: chatId })
+      });
+      if (!r.ok) throw new Error('Failed to save Telegram settings');
+      toast.success('Telegram settings saved');
+    } catch (e: any) {
+      toast.error(e.message || 'Telegram save failed');
+    }
   };
 
   const testTelegram = async () => {
-    await fetch(`${apiBase}/telegram/test`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader() } });
+    try {
+      const r = await fetch(`${apiBase}/telegram/test`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader() } });
+      if (!r.ok) throw new Error('Failed to send test');
+      toast.success('Test signal sent');
+    } catch (e: any) {
+      toast.error(e.message || 'Test signal failed');
+    }
   };
 
   return (

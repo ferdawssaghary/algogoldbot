@@ -195,6 +195,7 @@ class TradingEngine:
             )
             # Track ticket for user
             ticket = int(result.get("ticket")) if result.get("ticket") else None
+            order_id = int(result.get("order")) if result.get("order") else None
             if ticket:
                 self.user_tracked_tickets.setdefault(user_id, set()).add(ticket)
             # Persist trade entry
@@ -202,6 +203,7 @@ class TradingEngine:
                 trade = Trade(
                     user_id=user_id,
                     mt5_ticket=ticket,
+                    mt5_order_id=order_id,
                     signal_id=None,
                     trade_type=order_type,
                     symbol="XAUUSD",
@@ -278,10 +280,15 @@ class TradingEngine:
                                     from datetime import timedelta
                                     date_from = trade.open_time - timedelta(hours=2)
                             history = await self.mt5_service.get_trade_history(symbol="XAUUSD", date_from=date_from)
+                            orders_hist = await self.mt5_service.get_orders_history(date_from=date_from)
                             # Prefer OUT deals for the ticket
                             deals = [d for d in history if int(d.get("order", 0)) == t or int(d.get("ticket", 0)) == t]
                             out_deals = [d for d in deals if (d.get("entry") == 'OUT' or d.get("entry") == 'OUT_BY')]
                             deal = out_deals[0] if out_deals else (deals[0] if deals else None)
+                            if not deal and orders_hist:
+                                # Fallback: correlate by order id if stored
+                                if trade and trade.mt5_order_id:
+                                    deal = next((d for d in history if int(d.get("order", 0)) == int(trade.mt5_order_id)), None)
                             if deal:
                                 profit = float(deal.get("profit", 0.0))
                                 price = float(deal.get("price", 0.0))

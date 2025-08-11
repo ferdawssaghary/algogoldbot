@@ -103,6 +103,7 @@ class Trade(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     mt5_ticket = Column(BigInteger, unique=True)  # MT5 trade ticket number
+    mt5_order_id = Column(BigInteger)  # MT5 order id for robust correlation
     signal_id = Column(Integer, ForeignKey("trading_signals.id"))
     trade_type = Column(String(10), nullable=False)  # BUY, SELL
     symbol = Column(String(10), default="XAUUSD")
