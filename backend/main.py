@@ -54,6 +54,7 @@ async def lifespan(app: FastAPI):
         app.state.mt5_service = mt5_service
         app.state.trading_engine = trading_engine
         app.state.telegram_service = telegram_service
+        app.state.ea_instruction_queue = []  # simple global queue for EA instructions
         
         # Start background services
         asyncio.create_task(trading_engine.start())
