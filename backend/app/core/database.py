@@ -47,6 +47,7 @@ async def init_db() -> None:
         Trade, SigGolEntry, JournalEntry, SystemLog,
         TelegramNotification, MarketData, PerformanceMetrics
     )
+    from app.core.security import get_password_hash
     
     last_err = None
     for attempt in range(1, 11):
@@ -54,6 +55,22 @@ async def init_db() -> None:
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
             print("Database tables created successfully")
+            # Seed default admin if missing
+            async with AsyncSessionLocal() as s:
+                from sqlalchemy import select, func
+                res = await s.execute(select(User).where(User.username == 'admin'))
+                admin = res.scalar_one_or_none()
+                if admin is None:
+                    u = User(username='admin', email='admin@goldtrading.com', password_hash=get_password_hash('admin123'), is_active=True)
+                    s.add(u)
+                    await s.commit()
+                    # create default bot settings
+                    res2 = await s.execute(select(User).where(User.username == 'admin'))
+                    admin2 = res2.scalar_one_or_none()
+                    if admin2:
+                        from app.models.trading import BotSettings
+                        s.add(BotSettings(user_id=admin2.id))
+                        await s.commit()
             return
         except Exception as e:
             last_err = e
