@@ -13,6 +13,10 @@ const SettingsPage: React.FC = () => {
   const [tp, setTp] = useState(100);
   const [maxSpread, setMaxSpread] = useState(5);
   const [saving, setSaving] = useState(false);
+  const [timeframe, setTimeframe] = useState<'M1'|'M5'|'M15'|'M30'|'H1'|'H4'|'D1'>('M15');
+  const [enabled, setEnabled] = useState(true);
+  const [customTickValue, setCustomTickValue] = useState<number | ''>('' as any);
+  const [customPoint, setCustomPoint] = useState<number | ''>('' as any);
 
   useEffect(() => {
     const load = async () => {
@@ -24,6 +28,10 @@ const SettingsPage: React.FC = () => {
         setSl(j.stop_loss_pips);
         setTp(j.take_profit_pips);
         setMaxSpread(j.max_spread ?? 5);
+        setTimeframe(j.timeframe || 'M15');
+        setEnabled(j.enable_strategy ?? true);
+        setCustomTickValue(j.custom_tick_value ?? '');
+        setCustomPoint(j.custom_point ?? '');
       }
     };
     load();
@@ -35,7 +43,7 @@ const SettingsPage: React.FC = () => {
       await fetch(`${apiBase}/trading/settings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeader() },
-        body: JSON.stringify({ risk_percentage: risk, max_daily_trades: maxDaily, stop_loss_pips: sl, take_profit_pips: tp, max_spread: maxSpread })
+        body: JSON.stringify({ risk_percentage: risk, max_daily_trades: maxDaily, stop_loss_pips: sl, take_profit_pips: tp, max_spread: maxSpread, timeframe, enable_strategy: enabled, custom_tick_value: customTickValue === '' ? null : Number(customTickValue), custom_point: customPoint === '' ? null : Number(customPoint) })
       });
     } finally {
       setSaving(false);
@@ -54,6 +62,15 @@ const SettingsPage: React.FC = () => {
           <TextField label="Stop Loss (pips)" type="number" value={sl} onChange={e => setSl(Number(e.target.value))} />
           <TextField label="Take Profit (pips)" type="number" value={tp} onChange={e => setTp(Number(e.target.value))} />
           <TextField label="Max Spread (pips)" type="number" value={maxSpread} onChange={e => setMaxSpread(Number(e.target.value))} />
+          <TextField select label="Timeframe" value={timeframe} onChange={e => setTimeframe(e.target.value as any)}>
+            {['M1','M5','M15','M30','H1','H4','D1'].map(tf => <option key={tf} value={tf}>{tf}</option>)}
+          </TextField>
+          <Stack direction="row" spacing={2}>
+            <Button variant="outlined" onClick={() => setEnabled(e => !e)}>{enabled ? 'Disable Strategy' : 'Enable Strategy'}</Button>
+          </Stack>
+          <Typography variant="subtitle1">Broker Calibration (optional)</Typography>
+          <TextField label="Custom Tick Value" type="number" value={customTickValue} onChange={e => setCustomTickValue(e.target.value === '' ? '' : Number(e.target.value))} />
+          <TextField label="Custom Point Size" type="number" value={customPoint} onChange={e => setCustomPoint(e.target.value === '' ? '' : Number(e.target.value))} />
           <Stack direction="row" spacing={2}>
             <Button variant="contained" onClick={save} disabled={saving}>Save</Button>
           </Stack>

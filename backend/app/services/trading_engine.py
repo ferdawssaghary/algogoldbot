@@ -130,6 +130,13 @@ class TradingEngine:
     async def _execute_signal_for_user(self, db_session, user_id: int, order_type: str) -> None:
         result = await db_session.execute(select(BotSettings).where(BotSettings.user_id == user_id))
         s: BotSettings | None = result.scalar_one_or_none()
+        timeframe = s.timeframe if s and s.timeframe else "M15"
+        if s and s.enable_strategy is False:
+            return
+        # reload data for user timeframe if different
+        df = await self.mt5_service.get_price_data(symbol="XAUUSD", timeframe=timeframe, count=200)
+        if df is None or df.empty:
+            return
         stop_loss_pips = int(s.stop_loss_pips) if s else (settings.DEFAULT_STOP_LOSS or 50)
         take_profit_pips = int(s.take_profit_pips) if s else (settings.DEFAULT_TAKE_PROFIT or 100)
         max_spread_pips = float(getattr(s, 'max_spread', settings.MAX_SPREAD)) if s else (settings.MAX_SPREAD or 5.0)
@@ -152,8 +159,8 @@ class TradingEngine:
 
         acct = await self.mt5_service.get_account_info()
         balance = float(acct.get("balance", 0.0)) if acct else 0.0
-        tick_value = float(sym.get("tick_value") or 1.0)
-        point = float(sym.get("point") or 0.01)
+        tick_value = float(s.custom_tick_value) if s and s.custom_tick_value is not None else float(sym.get("tick_value") or 1.0)
+        point = float(s.custom_point) if s and s.custom_point is not None else float(sym.get("point") or 0.01)
         per_pip_value_per_lot = tick_value / (point / 0.01)
         risk_amount = balance * (risk_pct / 100.0)
         sl_pips = float(stop_loss_pips)
@@ -176,6 +183,9 @@ class TradingEngine:
                 f"{order_type} XAUUSD @ {price:.2f} SL {sl:.2f} TP {tp:.2f} (risk {risk_pct:.1f}%)",
                 "trade_entry"
             )
+            # Basic exit detection placeholder (to be extended with polling open positions and matching)
+            # For now, rely on trade history checks in a separate loop if implemented, then:
+            # await self.telegram_service.send_notification("CLOSE XAUUSD ...", "trade_exit")
 
     async def _update_account_status(self) -> None:
         """Update account status"""

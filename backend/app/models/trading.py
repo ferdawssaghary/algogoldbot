@@ -45,6 +45,11 @@ class BotSettings(Base):
     take_profit_pips = Column(Integer, default=100)
     lot_size = Column(Numeric(4, 2), default=Decimal('0.01'))
     algorithm_type = Column(String(50), default="trend_following")
+    timeframe = Column(String(5), default="M15")
+    enable_strategy = Column(Boolean, default=True)
+    max_spread = Column(Numeric(6, 2), default=Decimal('5.00'))
+    custom_tick_value = Column(Numeric(12, 5))
+    custom_point = Column(Numeric(10, 5))
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
