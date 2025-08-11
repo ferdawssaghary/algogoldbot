@@ -85,6 +85,14 @@ class TelegramService:
             logger.error(f"Error sending telegram message: {e}")
             return False
     
+    async def send_notification(self, message: str, event_type: str = "info") -> bool:
+        """Compatibility method used by the main app to send notifications"""
+        return await self.send_message(f"[{event_type}] {message}")
+    
     def is_active(self) -> bool:
         """Check if telegram service is active"""
+        return self.is_running
+    
+    def is_connected(self) -> bool:
+        """Compatibility method used by the main app to check service state"""
         return self.is_running

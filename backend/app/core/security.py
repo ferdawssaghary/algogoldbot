@@ -13,7 +13,6 @@ from cryptography.fernet import Fernet
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.user import User
-from app.crud.user import get_user_by_username
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -77,7 +76,10 @@ async def get_current_user(
     except JWTError:
         raise credentials_exception
     
-    user = await get_user_by_username(db, username=username)
+    # Inline query to avoid circular import with app.crud.user
+    from sqlalchemy import select
+    result = await db.execute(select(User).where(User.username == username))
+    user = result.scalar_one_or_none()
     if user is None:
         raise credentials_exception
     
