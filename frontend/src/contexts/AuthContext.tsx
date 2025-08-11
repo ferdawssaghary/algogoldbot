@@ -16,6 +16,7 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const apiBase = '/api';
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
@@ -30,34 +31,52 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check if user is logged in on mount
-    const token = localStorage.getItem('token');
-    if (token) {
-      // TODO: Validate token and get user info
-      setUser({
-        id: 1,
-        username: 'admin',
-        email: 'admin@goldtrading.com',
-        is_active: true
-      });
-    }
-    setLoading(false);
+    const init = async () => {
+      const token = localStorage.getItem('token');
+      if (token) {
+        try {
+          const res = await fetch(`${apiBase}/auth/me`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (res.ok) {
+            const u = await res.json();
+            setUser(u);
+          } else {
+            localStorage.removeItem('token');
+          }
+        } catch {
+          localStorage.removeItem('token');
+        }
+      }
+      setLoading(false);
+    };
+    init();
   }, []);
 
   const login = async (username: string, password: string) => {
     setLoading(true);
     try {
-      // TODO: Implement actual login logic
-      const mockUser = {
-        id: 1,
-        username,
-        email: 'admin@goldtrading.com',
-        is_active: true
-      };
-      setUser(mockUser);
-      localStorage.setItem('token', 'mock-token');
-    } catch (error) {
-      throw error;
+      const body = new URLSearchParams();
+      body.set('username', username);
+      body.set('password', password);
+      // OAuth2PasswordRequestForm requires x-www-form-urlencoded
+      const res = await fetch(`${apiBase}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString()
+      });
+      if (!res.ok) {
+        throw new Error('Invalid credentials');
+      }
+      const data = await res.json();
+      const token = data.access_token;
+      localStorage.setItem('token', token);
+      // Fetch current user
+      const me = await fetch(`${apiBase}/auth/me`, { headers: { 'Authorization': `Bearer ${token}` } });
+      if (me.ok) {
+        const u = await me.json();
+        setUser(u);
+      }
     } finally {
       setLoading(false);
     }
