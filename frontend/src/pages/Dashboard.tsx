@@ -3,6 +3,7 @@ import { Container, Typography, Grid, Card, CardContent, MenuItem, Select, FormC
 import { useLanguage } from '../contexts/LanguageContext';
 import { createChart, IChartApi, Time } from 'lightweight-charts';
 import { useWebSocket } from '../contexts/WebSocketContext';
+import { toast } from 'react-toastify';
 
 const apiBase = '/api';
 const authHeader = () => ({ 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` });
@@ -31,8 +32,8 @@ const Dashboard: React.FC = () => {
           const tjson = await tr.json();
           setRecentTrades(tjson.trades || []);
         }
-      } catch (e) {
-        // noop
+      } catch (e: any) {
+        toast.error(e.message || 'Failed to load dashboard');
       }
     };
     fetchData();
@@ -56,7 +57,7 @@ const Dashboard: React.FC = () => {
     const fetchPrice = async () => {
       await loadPrice(timeframe);
     };
-    fetchPrice();
+    fetchPrice().catch(() => toast.error('Failed to load price data'));
   }, [timeframe]);
 
   const tfToSeconds = (tf: string) => {
