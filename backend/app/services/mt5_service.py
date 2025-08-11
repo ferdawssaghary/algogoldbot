@@ -484,6 +484,22 @@ class MT5Service:
             
             result = []
             for deal in deals:
+                entry_val = getattr(deal, 'entry', None)
+                entry = None
+                try:
+                    # Map numeric to name if available on MT5 module
+                    if entry_val is not None and hasattr(mt5, 'DEAL_ENTRY_IN'):
+                        entry_names = {
+                            getattr(mt5, 'DEAL_ENTRY_IN', -1): 'IN',
+                            getattr(mt5, 'DEAL_ENTRY_OUT', -2): 'OUT',
+                            getattr(mt5, 'DEAL_ENTRY_INOUT', -3): 'INOUT',
+                            getattr(mt5, 'DEAL_ENTRY_OUT_BY', -4): 'OUT_BY',
+                        }
+                        entry = entry_names.get(entry_val, str(entry_val))
+                    else:
+                        entry = str(entry_val) if entry_val is not None else None
+                except Exception:
+                    entry = str(entry_val) if entry_val is not None else None
                 result.append({
                     'ticket': deal.ticket,
                     'order': deal.order,
@@ -495,7 +511,8 @@ class MT5Service:
                     'commission': deal.commission,
                     'swap': deal.swap,
                     'time': datetime.fromtimestamp(deal.time),
-                    'comment': deal.comment
+                    'comment': deal.comment,
+                    'entry': entry
                 })
             
             return result

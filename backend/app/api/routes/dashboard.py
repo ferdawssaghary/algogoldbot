@@ -80,3 +80,32 @@ async def get_price_data(
         for idx, row in df.iterrows()
     ]
     return {"symbol": symbol, "timeframe": timeframe, "candles": candles}
+
+@router.get("/recent-trades")
+async def get_recent_trades(
+    request: Request,
+    limit: int = Query(10, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    mt5_service = getattr(request.app.state, "mt5_service", None)
+    if not mt5_service:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="MT5 service unavailable")
+    history = await mt5_service.get_trade_history(symbol="XAUUSD")
+    # Filter to OUT deals primarily
+    out_deals = [d for d in history if d.get("entry") in ("OUT", "OUT_BY")]
+    # Sort by time desc
+    out_deals.sort(key=lambda d: d.get("time"), reverse=True)
+    rows = [
+        {
+            "time": d.get("time").isoformat() if hasattr(d.get("time"), 'isoformat') else None,
+            "ticket": d.get("ticket"),
+            "type": d.get("type"),
+            "price": d.get("price"),
+            "profit": d.get("profit"),
+            "volume": d.get("volume"),
+            "comment": d.get("comment"),
+        }
+        for d in out_deals[:limit]
+    ]
+    return {"trades": rows}

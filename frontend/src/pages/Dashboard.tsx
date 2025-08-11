@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Container, Typography, Grid, Card, CardContent, MenuItem, Select, FormControl, InputLabel, Stack } from '@mui/material';
+import { Container, Typography, Grid, Card, CardContent, MenuItem, Select, FormControl, InputLabel, Stack, Table, TableBody, TableCell, TableHead, TableRow } from '@mui/material';
 import { useLanguage } from '../contexts/LanguageContext';
 import { createChart, IChartApi, Time } from 'lightweight-charts';
 import { useWebSocket } from '../contexts/WebSocketContext';
@@ -13,6 +13,7 @@ const Dashboard: React.FC = () => {
   const [candles, setCandles] = useState<Array<{ time: Time; open: number; high: number; low: number; close: number }>>([]);
   const [timeframe, setTimeframe] = useState<'M1' | 'M5' | 'M15' | 'M30' | 'H1' | 'H4' | 'D1'>('M15');
   const { lastTick } = useWebSocket();
+  const [recentTrades, setRecentTrades] = useState<any[]>([]);
   const chartRef = useRef<HTMLDivElement | null>(null);
   const chartApiRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<any>(null);
@@ -24,6 +25,11 @@ const Dashboard: React.FC = () => {
         if (res.ok) {
           const json = await res.json();
           setData(json);
+        }
+        const tr = await fetch(`${apiBase}/dashboard/recent-trades`, { headers: { 'Content-Type': 'application/json', ...authHeader() } });
+        if (tr.ok) {
+          const tjson = await tr.json();
+          setRecentTrades(tjson.trades || []);
         }
       } catch (e) {
         // noop
@@ -151,7 +157,36 @@ const Dashboard: React.FC = () => {
           <Card>
             <CardContent>
               <Typography variant="h6">Recent Trades</Typography>
-              <Typography>No recent trades</Typography>
+              {recentTrades.length === 0 ? (
+                <Typography>No recent trades</Typography>
+              ) : (
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Time</TableCell>
+                      <TableCell>Ticket</TableCell>
+                      <TableCell>Type</TableCell>
+                      <TableCell align="right">Price</TableCell>
+                      <TableCell align="right">Volume</TableCell>
+                      <TableCell align="right">P/L</TableCell>
+                      <TableCell>Comment</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {recentTrades.map((r, idx) => (
+                      <TableRow key={idx}>
+                        <TableCell>{new Date(r.time).toLocaleString()}</TableCell>
+                        <TableCell>{r.ticket}</TableCell>
+                        <TableCell>{r.type}</TableCell>
+                        <TableCell align="right">{Number(r.price).toFixed(2)}</TableCell>
+                        <TableCell align="right">{Number(r.volume).toFixed(2)}</TableCell>
+                        <TableCell align="right" style={{ color: Number(r.profit) >= 0 ? '#2e7d32' : '#d32f2f' }}>{Number(r.profit).toFixed(2)}</TableCell>
+                        <TableCell>{r.comment}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
             </CardContent>
           </Card>
         </Grid>

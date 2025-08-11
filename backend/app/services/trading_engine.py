@@ -249,11 +249,18 @@ class TradingEngine:
                     for t in closed:
                         try:
                             history = await self.mt5_service.get_trade_history(symbol="XAUUSD")
-                            # Find deals matching this ticket/order
-                            deal = next((d for d in history if int(d.get("order", 0)) == t or int(d.get("ticket", 0)) == t), None)
-                            profit = float(deal.get("profit")) if deal else 0.0
-                            price = float(deal.get("price")) if deal else 0.0
-                            msg = f"Closed XAUUSD ticket {t} @ {price:.2f} P/L {profit:.2f}"
+                            # Prefer OUT deals for the ticket
+                            deals = [d for d in history if int(d.get("order", 0)) == t or int(d.get("ticket", 0)) == t]
+                            out_deals = [d for d in deals if (d.get("entry") == 'OUT' or d.get("entry") == 'OUT_BY')]
+                            deal = out_deals[0] if out_deals else (deals[0] if deals else None)
+                            if deal:
+                                profit = float(deal.get("profit", 0.0))
+                                price = float(deal.get("price", 0.0))
+                                volume = float(deal.get("volume", 0.0))
+                                comment = deal.get("comment") or ''
+                                msg = f"Closed XAUUSD ticket {t} @ {price:.2f} vol {volume:.2f} P/L {profit:.2f} {comment}"
+                            else:
+                                msg = f"Closed XAUUSD ticket {t} (details unavailable)"
                             await self.telegram_service.send_notification(msg, "trade_exit")
                         except Exception as ce:
                             await self.telegram_service.send_error(f"Exit detection error for ticket {t}: {ce}")
