@@ -57,19 +57,24 @@ async def init_db() -> None:
             print("Database tables created successfully")
             # Seed default admin if missing
             async with AsyncSessionLocal() as s:
-                from sqlalchemy import select, func
+                from sqlalchemy import select
                 res = await s.execute(select(User).where(User.username == 'admin'))
                 admin = res.scalar_one_or_none()
                 if admin is None:
                     u = User(username='admin', email='admin@goldtrading.com', password_hash=get_password_hash('admin123'), is_active=True)
                     s.add(u)
                     await s.commit()
-                    # create default bot settings
                     res2 = await s.execute(select(User).where(User.username == 'admin'))
-                    admin2 = res2.scalar_one_or_none()
-                    if admin2:
-                        from app.models.trading import BotSettings
-                        s.add(BotSettings(user_id=admin2.id))
+                    admin = res2.scalar_one_or_none()
+                # Ensure default admin password matches 'admin123' for dev
+                if admin is not None:
+                    admin.password_hash = get_password_hash('admin123')
+                    await s.commit()
+                    from app.models.trading import BotSettings
+                    res_bs = await s.execute(select(BotSettings).where(BotSettings.user_id == admin.id))
+                    bs = res_bs.scalar_one_or_none()
+                    if bs is None:
+                        s.add(BotSettings(user_id=admin.id))
                         await s.commit()
             return
         except Exception as e:
