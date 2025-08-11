@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Container, Typography, TextField, Button, Stack, Paper } from '@mui/material';
+import { Container, Typography, TextField, Button, Stack, Paper, Select, MenuItem, FormControl, InputLabel } from '@mui/material';
 import { useLanguage } from '../contexts/LanguageContext';
 
 const apiBase = '/api';
@@ -62,9 +62,12 @@ const SettingsPage: React.FC = () => {
           <TextField label="Stop Loss (pips)" type="number" value={sl} onChange={e => setSl(Number(e.target.value))} />
           <TextField label="Take Profit (pips)" type="number" value={tp} onChange={e => setTp(Number(e.target.value))} />
           <TextField label="Max Spread (pips)" type="number" value={maxSpread} onChange={e => setMaxSpread(Number(e.target.value))} />
-          <TextField select label="Timeframe" value={timeframe} onChange={e => setTimeframe(e.target.value as any)}>
-            {['M1','M5','M15','M30','H1','H4','D1'].map(tf => <option key={tf} value={tf}>{tf}</option>)}
-          </TextField>
+          <FormControl>
+            <InputLabel id="tf-select-label">Timeframe</InputLabel>
+            <Select labelId="tf-select-label" label="Timeframe" value={timeframe} onChange={e => setTimeframe(e.target.value as any)}>
+              {['M1','M5','M15','M30','H1','H4','D1'].map(tf => <MenuItem key={tf} value={tf}>{tf}</MenuItem>)}
+            </Select>
+          </FormControl>
           <Stack direction="row" spacing={2}>
             <Button variant="outlined" onClick={() => setEnabled(e => !e)}>{enabled ? 'Disable Strategy' : 'Enable Strategy'}</Button>
           </Stack>
