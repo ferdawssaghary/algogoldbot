@@ -203,6 +203,8 @@ class MT5Service:
                     'min_lot': 0.01,
                     'max_lot': 100.0,
                     'lot_step': 0.01,
+                    'tick_value': 1.0,  # approximate for XAUUSD per 0.01 per 1 lot
+                    'contract_size': 100.0,
                     'timestamp': datetime.now()
                 }
             
@@ -221,6 +223,8 @@ class MT5Service:
                 'min_lot': symbol_info.volume_min,
                 'max_lot': symbol_info.volume_max,
                 'lot_step': symbol_info.volume_step,
+                'tick_value': getattr(symbol_info, 'trade_tick_value', None),
+                'contract_size': getattr(symbol_info, 'trade_contract_size', None),
                 'timestamp': datetime.now()
             }
             

@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Container, Typography, Grid, Card, CardContent, MenuItem, Select, FormControl, InputLabel, Stack } from '@mui/material';
 import { useLanguage } from '../contexts/LanguageContext';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { createChart, IChartApi, Time } from 'lightweight-charts';
 import { useWebSocket } from '../contexts/WebSocketContext';
 
 const apiBase = '/api';
@@ -10,9 +10,12 @@ const authHeader = () => ({ 'Authorization': `Bearer ${localStorage.getItem('tok
 const Dashboard: React.FC = () => {
   const { t } = useLanguage();
   const [data, setData] = useState<any>(null);
-  const [priceSeries, setPriceSeries] = useState<Array<{ time: string; price: number }>>([]);
+  const [candles, setCandles] = useState<Array<{ time: Time; open: number; high: number; low: number; close: number }>>([]);
   const [timeframe, setTimeframe] = useState<'M1' | 'M5' | 'M15' | 'M30' | 'H1' | 'H4' | 'D1'>('M15');
   const { lastTick } = useWebSocket();
+  const chartRef = useRef<HTMLDivElement | null>(null);
+  const chartApiRef = useRef<IChartApi | null>(null);
+  const seriesRef = useRef<any>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -34,8 +37,11 @@ const Dashboard: React.FC = () => {
       const res = await fetch(`${apiBase}/dashboard/price?symbol=XAUUSD&timeframe=${tf}&count=200`, { headers: { 'Content-Type': 'application/json', ...authHeader() } });
       if (res.ok) {
         const json = await res.json();
-        const series = (json.candles || []).map((c: any) => ({ time: c.time, price: c.close }));
-        setPriceSeries(series);
+        const mapped = (json.candles || []).map((c: any) => ({ time: (new Date(c.time).getTime() / 1000) as Time, open: c.open, high: c.high, low: c.low, close: c.close }));
+        setCandles(mapped);
+        if (seriesRef.current) {
+          seriesRef.current.setData(mapped);
+        }
       }
     } catch {}
   };
@@ -48,14 +54,28 @@ const Dashboard: React.FC = () => {
   }, [timeframe]);
 
   useEffect(() => {
-    if (lastTick?.time && typeof lastTick.ask === 'number') {
-      setPriceSeries(prev => {
-        const next = [...prev, { time: lastTick.time!, price: lastTick.ask! }];
-        // keep last 300 points
-        return next.slice(Math.max(0, next.length - 300));
-      });
+    if (lastTick?.time && typeof lastTick.ask === 'number' && seriesRef.current) {
+      const t = Math.floor(new Date(lastTick.time).getTime() / 1000) as Time;
+      // Update last candle close to latest tick
+      seriesRef.current.update({ time: t, open: lastTick.ask, high: lastTick.ask, low: lastTick.ask, close: lastTick.ask });
     }
   }, [lastTick]);
+
+  useEffect(() => {
+    if (!chartRef.current) return;
+    const chart = createChart(chartRef.current, { height: 300, layout: { background: { color: '#ffffff' }, textColor: '#333' }, grid: { vertLines: { color: '#eee' }, horzLines: { color: '#eee' } } });
+    chartApiRef.current = chart;
+    const candleSeries = chart.addCandlestickSeries();
+    seriesRef.current = candleSeries;
+    if (candles.length) candleSeries.setData(candles);
+    const handleResize = () => chart.applyOptions({ width: chartRef.current?.clientWidth || 600 });
+    window.addEventListener('resize', handleResize);
+    handleResize();
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      chart.remove();
+    };
+  }, []);
 
   return (
     <Container maxWidth="lg">
@@ -100,15 +120,7 @@ const Dashboard: React.FC = () => {
                   </Select>
                 </FormControl>
               </Stack>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={priceSeries} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="time" hide tick={false} />
-                  <YAxis domain={['auto', 'auto']} />
-                  <Tooltip formatter={(v: number) => v.toFixed(2)} labelFormatter={(label) => new Date(label).toLocaleString()} />
-                  <Line type="monotone" dataKey="price" stroke="#1976d2" dot={false} strokeWidth={2} />
-                </LineChart>
-              </ResponsiveContainer>
+              <div ref={chartRef} style={{ width: '100%', height: 300 }} />
             </CardContent>
           </Card>
         </Grid>
