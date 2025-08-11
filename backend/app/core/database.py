@@ -1,6 +1,5 @@
 """Database configuration and session management"""
 
-import asyncio
 from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
@@ -42,12 +41,6 @@ async def init_db() -> None:
     """Initialize database tables"""
     try:
         # Import all models to ensure they are registered
-        from app.models.user import User
-        from app.models.trading import (
-            MT5Account, BotSettings, AccountStatus, TradingSignal, 
-            Trade, SigGolEntry, JournalEntry, SystemLog,
-            TelegramNotification, MarketData, PerformanceMetrics
-        )
         
         # Create all tables
         async with engine.begin() as conn:

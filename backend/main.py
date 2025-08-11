@@ -4,11 +4,9 @@ Gold Trading Bot - Main FastAPI Application
 XAUUSD Automated Trading System with MetaTrader 5 Integration
 """
 
-import os
 import asyncio
-import logging
 from contextlib import asynccontextmanager
-from typing import List, Optional
+from typing import Optional
 
 from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -50,6 +48,11 @@ async def lifespan(app: FastAPI):
         mt5_service = MT5Service()
         telegram_service = TelegramService()
         trading_engine = TradingEngine(mt5_service, telegram_service)
+        
+        # Expose services via app state for routers
+        app.state.mt5_service = mt5_service
+        app.state.trading_engine = trading_engine
+        app.state.telegram_service = telegram_service
         
         # Start background services
         asyncio.create_task(trading_engine.start())

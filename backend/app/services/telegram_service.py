@@ -1,12 +1,11 @@
 """Telegram Service for notifications"""
 
 import asyncio
-import logging
 from typing import Optional
-from datetime import datetime
 
 from app.utils.logger import setup_logger
 from app.core.config import settings
+import httpx
 
 logger = setup_logger(__name__)
 
@@ -77,9 +76,22 @@ class TelegramService:
     async def send_message(self, message: str) -> bool:
         """Send a message via Telegram"""
         try:
-            # Mock telegram message sending
-            logger.info(f"Telegram message: {message}")
-            return True
+            if not settings.TELEGRAM_ENABLED or not self.bot_token or not self.chat_id:
+                logger.info(f"Telegram disabled or not configured. Message: {message}")
+                return True
+            api_url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.post(api_url, json={
+                    "chat_id": self.chat_id,
+                    "text": message,
+                    "parse_mode": "HTML",
+                    "disable_web_page_preview": True
+                })
+                if resp.status_code == 200 and resp.json().get("ok"):
+                    logger.info("Telegram message sent")
+                    return True
+                logger.error(f"Telegram API error: {resp.text}")
+                return False
             
         except Exception as e:
             logger.error(f"Error sending telegram message: {e}")

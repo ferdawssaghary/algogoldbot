@@ -1,9 +1,8 @@
 """Trading Engine Service"""
 
 import asyncio
-import logging
 from typing import Optional, Dict, Set
-from datetime import datetime
+from datetime import datetime, date
 
 from app.utils.logger import setup_logger
 from app.services.mt5_service import MT5Service
@@ -21,6 +20,8 @@ class TradingEngine:
         self.trading_task: Optional[asyncio.Task] = None
         self.active_users: Set[int] = set()
         self.user_websocket_clients: Dict[int, Set] = {}
+        self.trades_today_count: int = 0
+        self.trades_today_date: date = date.today()
         
     async def start(self) -> None:
         """Start the trading engine"""
@@ -74,8 +75,71 @@ class TradingEngine:
     async def _check_signals(self) -> None:
         """Check for trading signals"""
         try:
-            # Mock signal checking
-            logger.debug("Checking for trading signals...")
+            # Reset daily counter
+            if self.trades_today_date != date.today():
+                self.trades_today_date = date.today()
+                self.trades_today_count = 0
+
+            if self.trades_today_count >= 10:
+                logger.debug("Daily trade limit reached")
+                return
+
+            # Fetch price data
+            df = await self.mt5_service.get_price_data(symbol="XAUUSD", timeframe="M15", count=200)
+            if df is None or df.empty:
+                return
+
+            # Compute indicators
+            ema_fast = df["close"].ewm(span=12, adjust=False).mean()
+            ema_slow = df["close"].ewm(span=26, adjust=False).mean()
+            delta = df["close"].diff()
+            gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14, adjust=False).mean()
+            loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
+            rs = gain / loss.replace({0: 1e-9})
+            rsi = 100 - (100 / (1 + rs))
+
+            # Generate signal on last two bars
+            cross_up = ema_fast.iloc[-2] <= ema_slow.iloc[-2] and ema_fast.iloc[-1] > ema_slow.iloc[-1]
+            cross_down = ema_fast.iloc[-2] >= ema_slow.iloc[-2] and ema_fast.iloc[-1] < ema_slow.iloc[-1]
+            rsi_last = float(rsi.iloc[-1])
+
+            order_type = None
+            if cross_up and rsi_last < 70:
+                order_type = "BUY"
+            elif cross_down and rsi_last > 30:
+                order_type = "SELL"
+
+            if not order_type:
+                return
+
+            # Place order using default risk params
+            lot_size = 0.01
+            stop_loss_pips = 50
+            take_profit_pips = 100
+            # Get current market to compute sl/tp
+            md = await self.mt5_service.get_market_data("XAUUSD")
+            if not md:
+                return
+            price = float(md.get("ask")) if order_type == "BUY" else float(md.get("bid"))
+            pip_value = 0.01
+            sl = price - stop_loss_pips * pip_value if order_type == "BUY" else price + stop_loss_pips * pip_value
+            tp = price + take_profit_pips * pip_value if order_type == "BUY" else price - take_profit_pips * pip_value
+
+            result = await self.mt5_service.place_order(
+                symbol="XAUUSD",
+                order_type=order_type,
+                lot_size=lot_size,
+                price=None,
+                stop_loss=sl,
+                take_profit=tp,
+                comment="EMA12/26 + RSI14"
+            )
+            if result:
+                self.trades_today_count += 1
+                await self.telegram_service.send_notification(
+                    f"{order_type} XAUUSD @ {price:.2f} SL {sl:.2f} TP {tp:.2f} (RSI {rsi_last:.1f})",
+                    "trade_entry"
+                )
             
         except Exception as e:
             logger.error(f"Error checking signals: {e}")
@@ -83,9 +147,23 @@ class TradingEngine:
     async def _update_account_status(self) -> None:
         """Update account status"""
         try:
-            # Mock account status update
-            logger.debug("Updating account status...")
-            
+            info = await self.mt5_service.get_account_info()
+            if not info:
+                return
+            payload = {
+                "type": "account_status",
+                "balance": float(info.get("balance", 0.0)),
+                "equity": float(info.get("equity", 0.0)),
+                "profit": float(info.get("profit", 0.0)),
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            for user_id, clients in list(self.user_websocket_clients.items()):
+                for ws in list(clients):
+                    try:
+                        await ws.send_json(payload)
+                    except Exception:
+                        # Drop dead clients silently
+                        pass
         except Exception as e:
             logger.error(f"Error updating account status: {e}")
     

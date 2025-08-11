@@ -2,7 +2,7 @@
 
 import os
 from datetime import datetime, timedelta
-from typing import Optional, Union, Any
+from typing import Union, Any
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status

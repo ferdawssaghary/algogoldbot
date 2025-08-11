@@ -4,7 +4,7 @@ from datetime import datetime, time, date
 from decimal import Decimal
 from sqlalchemy import (
     Column, Integer, String, Boolean, DateTime, Date, Time, 
-    Numeric, BigInteger, Text, ForeignKey, JSON
+    Numeric, BigInteger, Text, ForeignKey
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import JSONB

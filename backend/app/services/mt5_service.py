@@ -12,16 +12,12 @@ For development and testing, this service runs in mock mode when the package
 is not available.
 """
 
-import asyncio
-import logging
 from typing import Optional, Dict, List, Any
 from datetime import datetime, timedelta
 import pandas as pd
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.security import decrypt_sensitive_data
-from app.models.trading import MT5Account, MarketData, Trade
 from app.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
