@@ -1,6 +1,5 @@
 """Database configuration and session management"""
 
-import asyncio
 from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
@@ -12,8 +11,6 @@ from app.core.config import settings
 engine = create_async_engine(
     settings.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://"),
     echo=settings.DEBUG,
-    pool_size=settings.DATABASE_POOL_SIZE,
-    max_overflow=settings.DATABASE_MAX_OVERFLOW,
     poolclass=NullPool,  # Use NullPool for better compatibility with async
 )
 
@@ -44,12 +41,6 @@ async def init_db() -> None:
     """Initialize database tables"""
     try:
         # Import all models to ensure they are registered
-        from app.models.user import User
-        from app.models.trading import (
-            MT5Account, BotSettings, AccountStatus, TradingSignal, 
-            Trade, SigGolEntry, JournalEntry, SystemLog,
-            TelegramNotification, MarketData, PerformanceMetrics
-        )
         
         # Create all tables
         async with engine.begin() as conn:

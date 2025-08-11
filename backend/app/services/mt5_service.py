@@ -12,16 +12,12 @@ For development and testing, this service runs in mock mode when the package
 is not available.
 """
 
-import asyncio
-import logging
 from typing import Optional, Dict, List, Any
 from datetime import datetime, timedelta
 import pandas as pd
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.security import decrypt_sensitive_data
-from app.models.trading import MT5Account, MarketData, Trade
 from app.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -207,6 +203,8 @@ class MT5Service:
                     'min_lot': 0.01,
                     'max_lot': 100.0,
                     'lot_step': 0.01,
+                    'tick_value': 1.0,  # approximate for XAUUSD per 0.01 per 1 lot
+                    'contract_size': 100.0,
                     'timestamp': datetime.now()
                 }
             
@@ -225,6 +223,8 @@ class MT5Service:
                 'min_lot': symbol_info.volume_min,
                 'max_lot': symbol_info.volume_max,
                 'lot_step': symbol_info.volume_step,
+                'tick_value': getattr(symbol_info, 'trade_tick_value', None),
+                'contract_size': getattr(symbol_info, 'trade_contract_size', None),
                 'timestamp': datetime.now()
             }
             
@@ -484,6 +484,22 @@ class MT5Service:
             
             result = []
             for deal in deals:
+                entry_val = getattr(deal, 'entry', None)
+                entry = None
+                try:
+                    # Map numeric to name if available on MT5 module
+                    if entry_val is not None and hasattr(mt5, 'DEAL_ENTRY_IN'):
+                        entry_names = {
+                            getattr(mt5, 'DEAL_ENTRY_IN', -1): 'IN',
+                            getattr(mt5, 'DEAL_ENTRY_OUT', -2): 'OUT',
+                            getattr(mt5, 'DEAL_ENTRY_INOUT', -3): 'INOUT',
+                            getattr(mt5, 'DEAL_ENTRY_OUT_BY', -4): 'OUT_BY',
+                        }
+                        entry = entry_names.get(entry_val, str(entry_val))
+                    else:
+                        entry = str(entry_val) if entry_val is not None else None
+                except Exception:
+                    entry = str(entry_val) if entry_val is not None else None
                 result.append({
                     'ticket': deal.ticket,
                     'order': deal.order,
@@ -495,7 +511,8 @@ class MT5Service:
                     'commission': deal.commission,
                     'swap': deal.swap,
                     'time': datetime.fromtimestamp(deal.time),
-                    'comment': deal.comment
+                    'comment': deal.comment,
+                    'entry': entry
                 })
             
             return result
@@ -564,3 +581,39 @@ class MT5Service:
         except Exception as e:
             logger.error(f"Error getting price data: {e}")
             return None
+
+    async def get_orders_history(self, date_from: datetime = None, date_to: datetime = None) -> List[Dict[str, Any]]:
+        """Get orders history for robust correlation (if MT5 available)"""
+        try:
+            if not self.is_connected():
+                return []
+            if not MT5_AVAILABLE:
+                return []
+            if date_from is None:
+                date_from = datetime.now() - timedelta(days=30)
+            if date_to is None:
+                date_to = datetime.now()
+            orders = mt5.history_orders_get(date_from, date_to)
+            if orders is None:
+                return []
+            res = []
+            for o in orders:
+                res.append({
+                    'ticket': o.ticket,
+                    'symbol': o.symbol,
+                    'type': o.type,
+                    'volume_initial': o.volume_initial,
+                    'volume_current': o.volume_current,
+                    'price_open': o.price_open,
+                    'sl': o.sl,
+                    'tp': o.tp,
+                    'time_setup': datetime.fromtimestamp(o.time_setup),
+                    'time_done': datetime.fromtimestamp(o.time_done) if o.time_done else None,
+                    'reason': o.reason,
+                    'state': o.state,
+                    'comment': o.comment,
+                })
+            return res
+        except Exception as e:
+            logger.error(f"Error getting orders history: {e}")
+            return []

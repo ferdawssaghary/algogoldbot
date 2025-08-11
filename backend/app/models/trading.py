@@ -4,7 +4,7 @@ from datetime import datetime, time, date
 from decimal import Decimal
 from sqlalchemy import (
     Column, Integer, String, Boolean, DateTime, Date, Time, 
-    Numeric, BigInteger, Text, ForeignKey, JSON
+    Numeric, BigInteger, Text, ForeignKey
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import JSONB
@@ -45,6 +45,11 @@ class BotSettings(Base):
     take_profit_pips = Column(Integer, default=100)
     lot_size = Column(Numeric(4, 2), default=Decimal('0.01'))
     algorithm_type = Column(String(50), default="trend_following")
+    timeframe = Column(String(5), default="M15")
+    enable_strategy = Column(Boolean, default=True)
+    max_spread = Column(Numeric(6, 2), default=Decimal('5.00'))
+    custom_tick_value = Column(Numeric(12, 5))
+    custom_point = Column(Numeric(10, 5))
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -98,6 +103,7 @@ class Trade(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     mt5_ticket = Column(BigInteger, unique=True)  # MT5 trade ticket number
+    mt5_order_id = Column(BigInteger)  # MT5 order id for robust correlation
     signal_id = Column(Integer, ForeignKey("trading_signals.id"))
     trade_type = Column(String(10), nullable=False)  # BUY, SELL
     symbol = Column(String(10), default="XAUUSD")
