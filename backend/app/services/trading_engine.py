@@ -22,10 +22,12 @@ class TradingEngine:
         self.telegram_service = telegram_service
         self._is_running = False
         self.trading_task: Optional[asyncio.Task] = None
+        self.position_watcher_task: Optional[asyncio.Task] = None
         self.active_users: Set[int] = set()
         self.user_websocket_clients: Dict[int, Set] = {}
         self.trades_today_count: int = 0
         self.trades_today_date: date = date.today()
+        self.user_tracked_tickets: Dict[int, Set[int]] = {}
         
     async def start(self) -> None:
         """Start the trading engine"""
@@ -35,6 +37,8 @@ class TradingEngine:
             
             # Start the main trading loop
             self.trading_task = asyncio.create_task(self._trading_loop())
+            # Start the position watcher loop
+            self.position_watcher_task = asyncio.create_task(self._position_watcher_loop())
             
         except Exception as e:
             logger.error(f"Failed to start trading engine: {e}")
@@ -49,6 +53,12 @@ class TradingEngine:
                 self.trading_task.cancel()
                 try:
                     await self.trading_task
+                except asyncio.CancelledError:
+                    pass
+            if self.position_watcher_task:
+                self.position_watcher_task.cancel()
+                try:
+                    await self.position_watcher_task
                 except asyncio.CancelledError:
                     pass
             
@@ -183,6 +193,10 @@ class TradingEngine:
                 f"{order_type} XAUUSD @ {price:.2f} SL {sl:.2f} TP {tp:.2f} (risk {risk_pct:.1f}%)",
                 "trade_entry"
             )
+            # Track ticket for user
+            ticket = int(result.get("ticket")) if result.get("ticket") else None
+            if ticket:
+                self.user_tracked_tickets.setdefault(user_id, set()).add(ticket)
             # Basic exit detection placeholder (to be extended with polling open positions and matching)
             # For now, rely on trade history checks in a separate loop if implemented, then:
             # await self.telegram_service.send_notification("CLOSE XAUUSD ...", "trade_exit")
@@ -216,6 +230,42 @@ class TradingEngine:
                         pass
         except Exception as e:
             logger.error(f"Error updating account status: {e}")
+
+    async def _position_watcher_loop(self) -> None:
+        while self._is_running:
+            try:
+                if not self.user_tracked_tickets:
+                    await asyncio.sleep(10)
+                    continue
+                # Get all currently open positions
+                open_positions = await self.mt5_service.get_open_positions(symbol="XAUUSD")
+                open_tickets = {int(p.get("ticket")) for p in open_positions}
+                # For each user, find tickets that have closed
+                for user_id, tickets in list(self.user_tracked_tickets.items()):
+                    closed = [t for t in list(tickets) if t not in open_tickets]
+                    if not closed:
+                        continue
+                    # For each closed ticket, try to fetch closing info
+                    for t in closed:
+                        try:
+                            history = await self.mt5_service.get_trade_history(symbol="XAUUSD")
+                            # Find deals matching this ticket/order
+                            deal = next((d for d in history if int(d.get("order", 0)) == t or int(d.get("ticket", 0)) == t), None)
+                            profit = float(deal.get("profit")) if deal else 0.0
+                            price = float(deal.get("price")) if deal else 0.0
+                            msg = f"Closed XAUUSD ticket {t} @ {price:.2f} P/L {profit:.2f}"
+                            await self.telegram_service.send_notification(msg, "trade_exit")
+                        except Exception as ce:
+                            await self.telegram_service.send_error(f"Exit detection error for ticket {t}: {ce}")
+                        finally:
+                            tickets.discard(t)
+                    if not tickets:
+                        self.user_tracked_tickets.pop(user_id, None)
+                await asyncio.sleep(15)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                await asyncio.sleep(15)
     
     def is_active(self) -> bool:
         """Check if trading engine is active"""
