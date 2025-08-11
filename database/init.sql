@@ -38,6 +38,11 @@ CREATE TABLE IF NOT EXISTS bot_settings (
     take_profit_pips INTEGER DEFAULT 100,
     lot_size DECIMAL(4,2) DEFAULT 0.01,
     algorithm_type VARCHAR(50) DEFAULT 'trend_following',
+    timeframe VARCHAR(5) DEFAULT 'M15',
+    enable_strategy BOOLEAN DEFAULT true,
+    max_spread DECIMAL(6,2) DEFAULT 5.00,
+    custom_tick_value DECIMAL(12,5),
+    custom_point DECIMAL(10,5),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -75,6 +80,7 @@ CREATE TABLE IF NOT EXISTS trades (
     id SERIAL PRIMARY KEY,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     mt5_ticket BIGINT UNIQUE, -- MT5 trade ticket number
+    mt5_order_id BIGINT, -- MT5 order id for robust correlation
     signal_id INTEGER REFERENCES trading_signals(id),
     trade_type VARCHAR(10) CHECK (trade_type IN ('BUY', 'SELL')),
     symbol VARCHAR(10) DEFAULT 'XAUUSD',
