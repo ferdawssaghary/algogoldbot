@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Container, Typography, TextField, Button, Stack, Paper, Select, MenuItem, FormControl, InputLabel } from '@mui/material';
+import { Container, Typography, TextField, Button, Stack, Paper, Select, MenuItem, FormControl, InputLabel, Divider } from '@mui/material';
 import { useLanguage } from '../contexts/LanguageContext';
 
 const apiBase = '/api';
@@ -13,6 +13,8 @@ const SettingsPage: React.FC = () => {
   const [tp, setTp] = useState(100);
   const [maxSpread, setMaxSpread] = useState(5);
   const [saving, setSaving] = useState(false);
+  const [eaEnabled, setEaEnabled] = useState(false);
+  const [eaSecret, setEaSecret] = useState('');
   const [timeframe, setTimeframe] = useState<'M1'|'M5'|'M15'|'M30'|'H1'|'H4'|'D1'>('M15');
   const [enabled, setEnabled] = useState(true);
   const [customTickValue, setCustomTickValue] = useState<number | ''>('' as any);
@@ -33,6 +35,12 @@ const SettingsPage: React.FC = () => {
         setCustomTickValue(j.custom_tick_value ?? '');
         setCustomPoint(j.custom_point ?? '');
       }
+      const ea = await fetch(`${apiBase}/ea/settings`, { headers: { 'Content-Type': 'application/json', ...authHeader() } });
+      if (ea.ok) {
+        const ej = await ea.json();
+        setEaEnabled(!!ej.enabled);
+        setEaSecret(ej.shared_secret || '');
+      }
     };
     load();
   }, []);
@@ -44,6 +52,19 @@ const SettingsPage: React.FC = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeader() },
         body: JSON.stringify({ risk_percentage: risk, max_daily_trades: maxDaily, stop_loss_pips: sl, take_profit_pips: tp, max_spread: maxSpread, timeframe, enable_strategy: enabled, custom_tick_value: customTickValue === '' ? null : Number(customTickValue), custom_point: customPoint === '' ? null : Number(customPoint) })
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveEA = async () => {
+    setSaving(true);
+    try {
+      await fetch(`${apiBase}/ea/settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify({ enabled: eaEnabled, shared_secret: eaSecret })
       });
     } finally {
       setSaving(false);
@@ -77,6 +98,28 @@ const SettingsPage: React.FC = () => {
           <Stack direction="row" spacing={2}>
             <Button variant="contained" onClick={save} disabled={saving}>Save</Button>
           </Stack>
+        </Stack>
+      </Paper>
+
+      <Divider sx={{ my: 3 }} />
+
+      <Paper sx={{ p: 3 }}>
+        <Typography variant="h6" gutterBottom>EA Bridge</Typography>
+        <Stack spacing={2}>
+          <FormControl>
+            <InputLabel id="ea-enabled-label">Enabled</InputLabel>
+            <Select labelId="ea-enabled-label" label="Enabled" value={eaEnabled ? 'true' : 'false'} onChange={e => setEaEnabled(e.target.value === 'true')}>
+              <MenuItem value={'true'}>Enabled</MenuItem>
+              <MenuItem value={'false'}>Disabled</MenuItem>
+            </Select>
+          </FormControl>
+          <TextField label="Shared Secret" value={eaSecret} onChange={e => setEaSecret(e.target.value)} />
+          <Stack direction="row" spacing={2}>
+            <Button variant="contained" onClick={saveEA} disabled={saving}>Save EA Settings</Button>
+          </Stack>
+          <Typography variant="body2" color="text.secondary">
+            Configure this secret in your MT5 EA. The EA will call the backend with this secret to authenticate.
+          </Typography>
         </Stack>
       </Paper>
     </Container>

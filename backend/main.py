@@ -21,6 +21,7 @@ from app.core.database import get_db, init_db
 from app.core.security import get_current_user
 from app.models.user import User
 from app.api.routes import auth, trading, dashboard, mt5_config, telegram_bot
+from app.api.routes import ea_bridge
 from app.services.trading_engine import TradingEngine
 from app.services.mt5_service import MT5Service
 from app.services.telegram_service import TelegramService
@@ -161,6 +162,7 @@ app.include_router(trading.router, prefix="/api/trading", tags=["Trading"])
 app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"])
 app.include_router(mt5_config.router, prefix="/api/mt5", tags=["MT5 Configuration"])
 app.include_router(telegram_bot.router, prefix="/api/telegram", tags=["Telegram"])
+app.include_router(ea_bridge.router, prefix="/api/ea", tags=["EA Bridge"])
 
 # Global exception handler
 @app.exception_handler(Exception)

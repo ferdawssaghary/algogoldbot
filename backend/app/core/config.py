@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     TELEGRAM_CHAT_ID: str = "-1002481438774"
     TELEGRAM_ENABLED: bool = True
     
+    # EA Bridge settings
+    EA_BRIDGE_ENABLED: bool = False
+    EA_SHARED_SECRET: Optional[str] = None
+    
     # CORS settings
     ALLOWED_HOSTS: List[str] = ["http://localhost:3000", "http://frontend:3000", "*"]
     
