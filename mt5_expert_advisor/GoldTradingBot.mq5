@@ -35,10 +35,10 @@ input double   RSI_Overbought   = 70;       // RSI overbought level
 
 input group "=== WebSocket Settings ==="
 input string   WebSocketURL     = "ws://localhost:8000/ws/mt5"; // WebSocket URL
+input string   BackendURL       = "http://localhost:8000"; // Backend API URL
 input string   SecretKey        = "g4dV6pG9qW2z8K1rY7tB3nM5xC0hL2sD"; // Secret key
 input bool     EnableWebSocket  = true;     // Enable WebSocket communication
 input int      UpdateInterval   = 1000;     // Update interval in milliseconds
-input string   BackendURL       = "http://localhost:8000"; // Backend API URL
 
 //--- Global variables
 string EA_Symbol = "XAUUSD";
@@ -49,10 +49,8 @@ int fast_ma_handle, slow_ma_handle, rsi_handle;
 bool websocket_connected = false;
 bool trading_enabled = true;
 datetime last_update_time = 0;
-datetime last_command_check = 0;
-int command_check_interval = 5000; // Check for commands every 5 seconds
 
-// WebSocket library functions (simplified for demo)
+// Trading objects
 #include <Trade\Trade.mqh>
 #include <Indicators\Indicators.mqh>
 
@@ -188,19 +186,6 @@ void OnTick()
         SendAccountInfo();
         SendMarketData();
         last_update_time = TimeCurrent();
-    }
-}
-
-//+------------------------------------------------------------------+
-//| Timer function for periodic updates                             |
-//+------------------------------------------------------------------+
-void OnTimer()
-{
-    // Check for commands from web interface
-    if(websocket_connected && TimeCurrent() - last_command_check >= command_check_interval / 1000)
-    {
-        CheckForCommands();
-        last_command_check = TimeCurrent();
     }
 }
 
@@ -349,8 +334,7 @@ void UpdateAccountInfo()
 //+------------------------------------------------------------------+
 void InitializeWebSocket()
 {
-    // Since MQL5 doesn't support WebSocket directly, we'll simulate it
-    // by sending a connection request to the backend
+    // Send initial connection request to backend
     string url = BackendURL + "/api/ea-bridge/connect";
     string headers = "Content-Type: application/json\r\nX-EA-SECRET: " + SecretKey + "\r\n";
     string data = StringFormat("{\"symbol\":\"%s\",\"account\":\"%d\",\"server\":\"%s\",\"websocket_url\":\"%s\"}", 
@@ -529,6 +513,20 @@ void HandleWebCommand(string command)
             TakeProfit = new_tp;
             Print("Take Profit updated to: ", TakeProfit);
         }
+    }
+}
+
+//+------------------------------------------------------------------+
+//| Timer function for periodic updates                             |
+//+------------------------------------------------------------------+
+void OnTimer()
+{
+    // Check for commands from web interface
+    if(websocket_connected)
+    {
+        // This would typically check for incoming WebSocket messages
+        // For now, we'll use a simple polling mechanism
+        CheckForCommands();
     }
 }
 
