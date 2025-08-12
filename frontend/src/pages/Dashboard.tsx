@@ -13,7 +13,7 @@ const Dashboard: React.FC = () => {
   const [data, setData] = useState<any>(null);
   const [candles, setCandles] = useState<Array<{ time: Time; open: number; high: number; low: number; close: number }>>([]);
   const [timeframe, setTimeframe] = useState<'M1' | 'M5' | 'M15' | 'M30' | 'H1' | 'H4' | 'D1'>('M15');
-  const { lastTick } = useWebSocket();
+  const { lastTick, accountInfo } = useWebSocket();
   const [recentTrades, setRecentTrades] = useState<any[]>([]);
   const chartRef = useRef<HTMLDivElement | null>(null);
   const chartApiRef = useRef<IChartApi | null>(null);
@@ -117,7 +117,14 @@ const Dashboard: React.FC = () => {
           <Card>
             <CardContent>
               <Typography variant="h6">Account Balance</Typography>
-              <Typography variant="h4" color="primary">${data?.account_balance?.toFixed?.(2) || '0.00'}</Typography>
+              <Typography variant="h4" color="primary">
+                ${accountInfo?.balance?.toFixed(2) || data?.account_balance?.toFixed(2) || '0.00'}
+              </Typography>
+              {accountInfo?.equity && (
+                <Typography variant="body2" color="text.secondary">
+                  Equity: ${accountInfo.equity.toFixed(2)} | Profit: ${accountInfo.profit?.toFixed(2) || '0.00'}
+                </Typography>
+              )}
             </CardContent>
           </Card>
         </Grid>

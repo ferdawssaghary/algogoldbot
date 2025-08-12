@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     
     # MetaTrader 5 settings
     MT5_SERVER: str = "LiteFinance-Demo"
+    MT5_LOGIN: Optional[str] = None
+    MT5_PASSWORD: Optional[str] = None
     MT5_PATH: Optional[str] = None
     MT5_TIMEOUT: int = 60000
     

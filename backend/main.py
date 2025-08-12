@@ -5,6 +5,7 @@ XAUUSD Automated Trading System with MetaTrader 5 Integration
 """
 
 import asyncio
+import json
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -47,6 +48,22 @@ async def lifespan(app: FastAPI):
         
         # Initialize services
         mt5_service = MT5Service()
+        
+        # Auto-connect to MT5 if credentials are configured
+        if settings.MT5_LOGIN and settings.MT5_PASSWORD:
+            logger.info(f"Attempting to connect to MT5 account: {settings.MT5_LOGIN}")
+            connection_success = await mt5_service.connect_account(
+                login=settings.MT5_LOGIN,
+                password=settings.MT5_PASSWORD,
+                server=settings.MT5_SERVER
+            )
+            if connection_success:
+                logger.info("Successfully connected to MT5 account")
+            else:
+                logger.warning("Failed to connect to MT5 account, running in mock mode")
+        else:
+            logger.info("No MT5 credentials configured, running in mock mode")
+        
         telegram_service = TelegramService(mt5_service)
         trading_engine = TradingEngine(mt5_service, telegram_service)
         
@@ -261,6 +278,96 @@ async def websocket_endpoint(websocket, user_id: int):
     finally:
         if trading_engine:
             await trading_engine.remove_websocket_client(user_id, websocket)
+
+# MT5 WebSocket endpoint for direct MT5 connection
+@app.websocket("/ws/mt5")
+async def mt5_websocket_endpoint(websocket):
+    """WebSocket endpoint for direct MT5 connection"""
+    await websocket.accept()
+    
+    # Get secret from query parameters
+    secret = websocket.query_params.get("secret")
+    expected_secret = "g4dV6pG9qW2z8K1rY7tB3nM5xC0hL2sD"
+    
+    if secret != expected_secret:
+        await websocket.close(code=4001, reason="Invalid secret")
+        return
+    
+    try:
+        logger.info("MT5 WebSocket client connected")
+        
+        # Send initial account info
+        if mt5_service and mt5_service.current_account:
+            account_info = {
+                "type": "account_status",
+                "balance": mt5_service.current_account.get('balance', 0),
+                "equity": mt5_service.current_account.get('equity', 0),
+                "profit": mt5_service.current_account.get('profit', 0),
+                "currency": mt5_service.current_account.get('currency', 'USD')
+            }
+            await websocket.send_json(account_info)
+        
+        # Keep connection alive and handle MT5 data
+        while True:
+            try:
+                # Receive any messages from client
+                data = await websocket.receive_text()
+                message = json.loads(data)
+                
+                # Handle different message types
+                if message.get("type") == "get_balance":
+                    if mt5_service and mt5_service.current_account:
+                        account_info = {
+                            "type": "account_status",
+                            "balance": mt5_service.current_account.get('balance', 0),
+                            "equity": mt5_service.current_account.get('equity', 0),
+                            "profit": mt5_service.current_account.get('profit', 0),
+                            "currency": mt5_service.current_account.get('currency', 'USD')
+                        }
+                        await websocket.send_json(account_info)
+                
+                elif message.get("type") == "get_tick":
+                    symbol = message.get("symbol", "XAUUSD")
+                    if mt5_service:
+                        tick = await mt5_service.get_symbol_info_tick(symbol)
+                        if tick:
+                            tick_data = {
+                                "type": "account_status",
+                                "tick": {
+                                    "symbol": symbol,
+                                    "bid": tick.get('bid', 0),
+                                    "ask": tick.get('ask', 0),
+                                    "time": tick.get('time', '')
+                                }
+                            }
+                            await websocket.send_json(tick_data)
+                
+                elif message.get("type") == "place_order":
+                    # Handle order placement
+                    order_result = await mt5_service.place_order(
+                        symbol=message.get("symbol", "XAUUSD"),
+                        order_type=message.get("order_type", "BUY"),
+                        volume=message.get("volume", 0.01),
+                        price=message.get("price", 0),
+                        sl=message.get("sl", 0),
+                        tp=message.get("tp", 0),
+                        comment=message.get("comment", "")
+                    )
+                    await websocket.send_json({
+                        "type": "order_result",
+                        "success": order_result.get("success", False),
+                        "ticket": order_result.get("ticket", 0),
+                        "message": order_result.get("message", "")
+                    })
+                    
+            except json.JSONDecodeError:
+                # Keep connection alive with ping/pong
+                continue
+                
+    except Exception as e:
+        logger.error(f"MT5 WebSocket error: {e}")
+    finally:
+        logger.info("MT5 WebSocket client disconnected")
 
 if __name__ == "__main__":
     import uvicorn

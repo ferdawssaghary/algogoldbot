@@ -7,9 +7,17 @@ interface TickPayload {
   time?: string | null;
 }
 
+interface AccountInfo {
+  balance?: number;
+  equity?: number;
+  profit?: number;
+  currency?: string;
+}
+
 interface WebSocketContextType {
   connected: boolean;
   lastTick: TickPayload | null;
+  accountInfo: AccountInfo | null;
 }
 
 const WebSocketContext = createContext<WebSocketContextType | undefined>(undefined);
@@ -25,30 +33,62 @@ export const useWebSocket = () => {
 export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [connected, setConnected] = useState(false);
   const [lastTick, setLastTick] = useState<TickPayload | null>(null);
+  const [accountInfo, setAccountInfo] = useState<AccountInfo | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
-    const userId = 1; // replace with real user id when auth is wired
-    const wsUrl = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws/${userId}`;
+    // Connect to MT5 WebSocket endpoint with secret
+    const wsUrl = `ws://localhost:8000/ws/mt5?secret=g4dV6pG9qW2z8K1rY7tB3nM5xC0hL2sD`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
-    ws.onopen = () => setConnected(true);
-    ws.onclose = () => setConnected(false);
-    ws.onerror = () => setConnected(false);
+    ws.onopen = () => {
+      console.log('Connected to MT5 WebSocket');
+      setConnected(true);
+      
+      // Request initial account balance
+      ws.send(JSON.stringify({ type: 'get_balance' }));
+      
+      // Request initial tick data
+      ws.send(JSON.stringify({ type: 'get_tick', symbol: 'XAUUSD' }));
+    };
+    
+    ws.onclose = () => {
+      console.log('Disconnected from MT5 WebSocket');
+      setConnected(false);
+    };
+    
+    ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+      setConnected(false);
+    };
+    
     ws.onmessage = (ev) => {
       try {
         const data = JSON.parse(ev.data);
-        if (data?.type === 'account_status' && data?.tick) {
-          setLastTick({
-            symbol: data.tick.symbol ?? undefined,
-            bid: data.tick.bid ?? undefined,
-            ask: data.tick.ask ?? undefined,
-            time: data.tick.time ?? undefined,
-          });
+        console.log('Received MT5 data:', data);
+        
+        if (data?.type === 'account_status') {
+          if (data?.tick) {
+            setLastTick({
+              symbol: data.tick.symbol ?? undefined,
+              bid: data.tick.bid ?? undefined,
+              ask: data.tick.ask ?? undefined,
+              time: data.tick.time ?? undefined,
+            });
+          }
+          
+          if (data?.balance !== undefined) {
+            setAccountInfo({
+              balance: data.balance,
+              equity: data.equity,
+              profit: data.profit,
+              currency: data.currency
+            });
+          }
         }
-      } catch {
-        // ignore non-JSON
+      } catch (error) {
+        console.error('Error parsing WebSocket message:', error);
       }
     };
 
@@ -57,7 +97,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     };
   }, []);
 
-  const value = { connected, lastTick };
+  const value = { connected, lastTick, accountInfo };
 
   return (
     <WebSocketContext.Provider value={value}>
