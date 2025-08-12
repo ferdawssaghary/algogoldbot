@@ -5,8 +5,8 @@
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2024, Gold Trading Bot Team"
 #property link      "https://goldtradingbot.com"
-#property version   "1.00"
-#property description "Automated Gold (XAUUSD) Trading Expert Advisor"
+#property version   "2.10"
+#property description "Automated Gold (XAUUSD) Trading Expert Advisor with WebSocket Integration"
 
 //--- Input parameters
 input group "=== Trading Settings ==="
@@ -35,7 +35,10 @@ input double   RSI_Overbought   = 70;       // RSI overbought level
 
 input group "=== WebSocket Settings ==="
 input string   WebSocketURL     = "ws://localhost:8000/ws/mt5"; // WebSocket URL
+input string   SecretKey        = "g4dV6pG9qW2z8K1rY7tB3nM5xC0hL2sD"; // Secret key
 input bool     EnableWebSocket  = true;     // Enable WebSocket communication
+input int      UpdateInterval   = 1000;     // Update interval in milliseconds
+input string   BackendURL       = "http://localhost:8000"; // Backend API URL
 
 //--- Global variables
 string EA_Symbol = "XAUUSD";
@@ -44,6 +47,10 @@ int daily_trades_count = 0;
 datetime last_trade_date = 0;
 int fast_ma_handle, slow_ma_handle, rsi_handle;
 bool websocket_connected = false;
+bool trading_enabled = true;
+datetime last_update_time = 0;
+datetime last_command_check = 0;
+int command_check_interval = 5000; // Check for commands every 5 seconds
 
 // WebSocket library functions (simplified for demo)
 #include <Trade\Trade.mqh>
@@ -84,7 +91,16 @@ int OnInit()
         InitializeWebSocket();
     }
     
-    Print("Gold Trading Bot initialized successfully");
+    // Send initial account info
+    SendAccountInfo();
+    
+    // Set up timer for command checking
+    EventSetMillisecondTimer(1000);
+    
+    Print("Gold Trading Bot v2.10 (WebSocket) initialized successfully");
+    Print("WebSocket URL: ", WebSocketURL);
+    Print("Secret Key: ", SecretKey);
+    
     return INIT_SUCCEEDED;
 }
 
@@ -104,6 +120,9 @@ void OnDeinit(const int reason)
         CloseWebSocket();
     }
     
+    // Stop timer
+    EventKillTimer();
+    
     Print("Gold Trading Bot deinitialized. Reason: ", reason);
 }
 
@@ -115,6 +134,13 @@ void OnTick()
     // Check if trading is allowed
     if(!(TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) && MQLInfoInteger(MQL_TRADE_ALLOWED)) || !IsMarketOpen() || !IsWithinTradingHours())
         return;
+    
+    // Check if trading is enabled via web interface
+    if(!trading_enabled)
+    {
+        Comment("Trading disabled via web interface");
+        return;
+    }
     
     // Check spread
     double spread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD) * point_value / point_value;
@@ -155,13 +181,26 @@ void OnTick()
         OpenSellOrder(bid);
     }
     
-    // Update account information
-    UpdateAccountInfo();
-    
-    // Send data to web application via WebSocket
-    if(websocket_connected)
+    // Update account information periodically
+    if(TimeCurrent() - last_update_time >= UpdateInterval / 1000)
     {
+        UpdateAccountInfo();
+        SendAccountInfo();
         SendMarketData();
+        last_update_time = TimeCurrent();
+    }
+}
+
+//+------------------------------------------------------------------+
+//| Timer function for periodic updates                             |
+//+------------------------------------------------------------------+
+void OnTimer()
+{
+    // Check for commands from web interface
+    if(websocket_connected && TimeCurrent() - last_command_check >= command_check_interval / 1000)
+    {
+        CheckForCommands();
+        last_command_check = TimeCurrent();
     }
 }
 
@@ -299,19 +338,69 @@ void UpdateAccountInfo()
     double margin = AccountInfoDouble(ACCOUNT_MARGIN);
     double free_margin = AccountInfoDouble(ACCOUNT_FREEMARGIN);
     
-    Comment(StringFormat("Balance: %.2f | Equity: %.2f | Margin: %.2f | Free: %.2f | Trades: %d",
-                        balance, equity, margin, free_margin, daily_trades_count));
+    Comment(StringFormat("Balance: %.2f | Equity: %.2f | Margin: %.2f | Free: %.2f | Trades: %d | Trading: %s | WS: %s",
+                        balance, equity, margin, free_margin, daily_trades_count, 
+                        trading_enabled ? "Enabled" : "Disabled",
+                        websocket_connected ? "Connected" : "Disconnected"));
 }
 
 //+------------------------------------------------------------------+
-//| Initialize WebSocket connection (simplified)                    |
+//| Initialize WebSocket connection                                  |
 //+------------------------------------------------------------------+
 void InitializeWebSocket()
 {
-    // This is a simplified version - actual implementation would require
-    // a WebSocket library or custom implementation
-    websocket_connected = true;
-    Print("WebSocket connection initialized");
+    // Since MQL5 doesn't support WebSocket directly, we'll simulate it
+    // by sending a connection request to the backend
+    string url = BackendURL + "/api/ea-bridge/connect";
+    string headers = "Content-Type: application/json\r\nX-EA-SECRET: " + SecretKey + "\r\n";
+    string data = StringFormat("{\"symbol\":\"%s\",\"account\":\"%d\",\"server\":\"%s\",\"websocket_url\":\"%s\"}", 
+                              EA_Symbol, AccountInfoInteger(ACCOUNT_LOGIN), AccountInfoString(ACCOUNT_SERVER), WebSocketURL);
+    
+    char post[], result[];
+    StringToCharArray(data, post);
+    
+    int res = WebRequest("POST", url, headers, 5000, post, result, headers);
+    
+    if(res == 200)
+    {
+        websocket_connected = true;
+        Print("WebSocket connection initialized successfully");
+        Print("WebSocket URL: ", WebSocketURL);
+        Print("Secret Key: ", SecretKey);
+    }
+    else
+    {
+        Print("Failed to initialize WebSocket connection. Error: ", res);
+        Print("Trying alternative connection method...");
+        
+        // Try alternative connection method
+        AlternativeConnection();
+    }
+}
+
+//+------------------------------------------------------------------+
+//| Alternative connection method                                    |
+//+------------------------------------------------------------------+
+void AlternativeConnection()
+{
+    // Try to connect using the health endpoint
+    string url = BackendURL + "/health";
+    string headers = "Content-Type: application/json\r\n";
+    
+    char result[];
+    int res = WebRequest("GET", url, headers, 5000, result, headers);
+    
+    if(res == 200)
+    {
+        websocket_connected = true;
+        Print("Alternative connection successful");
+        Print("Backend is running, WebSocket simulation enabled");
+    }
+    else
+    {
+        Print("Backend not accessible. Error: ", res);
+        websocket_connected = false;
+    }
 }
 
 //+------------------------------------------------------------------+
@@ -324,20 +413,54 @@ void CloseWebSocket()
 }
 
 //+------------------------------------------------------------------+
+//| Send account information to web application                     |
+//+------------------------------------------------------------------+
+void SendAccountInfo()
+{
+    if(!websocket_connected) return;
+    
+    double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+    double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+    double profit = AccountInfoDouble(ACCOUNT_PROFIT);
+    
+    string url = BackendURL + "/api/ea-bridge/account";
+    string headers = "Content-Type: application/json\r\nX-EA-SECRET: " + SecretKey + "\r\n";
+    string data = StringFormat("{\"balance\":%.2f,\"equity\":%.2f,\"profit\":%.2f,\"margin\":%.2f}", 
+                              balance, equity, profit, AccountInfoDouble(ACCOUNT_MARGIN));
+    
+    char post[], result[];
+    StringToCharArray(data, post);
+    
+    int res = WebRequest("POST", url, headers, 5000, post, result, headers);
+    if(res != 200)
+    {
+        Print("Failed to send account info. Error: ", res);
+    }
+}
+
+//+------------------------------------------------------------------+
 //| Send market data to web application                             |
 //+------------------------------------------------------------------+
 void SendMarketData()
 {
+    if(!websocket_connected) return;
+    
     double bid = SymbolInfoDouble(EA_Symbol, SYMBOL_BID);
     double ask = SymbolInfoDouble(EA_Symbol, SYMBOL_ASK);
-    double spread = ask - bid;
     
-    // Create JSON-like string for market data
-    string data = StringFormat("{\"type\":\"market_data\",\"symbol\":\"%s\",\"bid\":%.5f,\"ask\":%.5f,\"spread\":%.5f,\"timestamp\":%d}",
-                              EA_Symbol, bid, ask, spread, TimeCurrent());
+    string url = BackendURL + "/api/ea-bridge/tick";
+    string headers = "Content-Type: application/json\r\nX-EA-SECRET: " + SecretKey + "\r\n";
+    string data = StringFormat("{\"symbol\":\"%s\",\"bid\":%.5f,\"ask\":%.5f,\"time\":\"%s\"}", 
+                              EA_Symbol, bid, ask, TimeToString(TimeCurrent()));
     
-    // Send data (implementation depends on WebSocket library)
-    Print("Market data: ", data);
+    char post[], result[];
+    StringToCharArray(data, post);
+    
+    int res = WebRequest("POST", url, headers, 5000, post, result, headers);
+    if(res != 200)
+    {
+        Print("Failed to send market data. Error: ", res);
+    }
 }
 
 //+------------------------------------------------------------------+
@@ -345,19 +468,111 @@ void SendMarketData()
 //+------------------------------------------------------------------+
 void SendTradeNotification(string trade_type, double price, double sl, double tp)
 {
-    string data = StringFormat("{\"type\":\"trade_opened\",\"trade_type\":\"%s\",\"symbol\":\"%s\",\"price\":%.5f,\"sl\":%.5f,\"tp\":%.5f,\"timestamp\":%d}",
-                              trade_type, EA_Symbol, price, sl, tp, TimeCurrent());
+    if(!websocket_connected) return;
     
-    // Send notification (implementation depends on WebSocket library)
-    Print("Trade notification: ", data);
+    string url = BackendURL + "/api/ea-bridge/trade-event";
+    string headers = "Content-Type: application/json\r\nX-EA-SECRET: " + SecretKey + "\r\n";
+    string data = StringFormat("{\"ticket\":%d,\"symbol\":\"%s\",\"type\":\"%s\",\"volume\":%.2f,\"price\":%.5f,\"comment\":\"EA %s order\"}", 
+                              trade.ResultOrder(), EA_Symbol, trade_type, LotSize, price, trade_type);
+    
+    char post[], result[];
+    StringToCharArray(data, post);
+    
+    int res = WebRequest("POST", url, headers, 5000, post, result, headers);
+    if(res != 200)
+    {
+        Print("Failed to send trade notification. Error: ", res);
+    }
 }
 
 //+------------------------------------------------------------------+
-//| Handle WebSocket messages                                        |
+//| Handle commands from web application                            |
 //+------------------------------------------------------------------+
-void OnWebSocketMessage(string message)
+void HandleWebCommand(string command)
 {
-    // Parse incoming messages from web application
-    // This could include commands to start/stop trading, update parameters, etc.
-    Print("Received WebSocket message: ", message);
+    if(command == "start_trading")
+    {
+        trading_enabled = true;
+        Print("Trading enabled via web interface");
+    }
+    else if(command == "stop_trading")
+    {
+        trading_enabled = false;
+        Print("Trading disabled via web interface");
+    }
+    else if(StringFind(command, "update_lot_size:") >= 0)
+    {
+        string lot_str = StringSubstr(command, StringFind(command, ":") + 1);
+        double new_lot = StringToDouble(lot_str);
+        if(new_lot > 0)
+        {
+            LotSize = new_lot;
+            Print("Lot size updated to: ", LotSize);
+        }
+    }
+    else if(StringFind(command, "update_stop_loss:") >= 0)
+    {
+        string sl_str = StringSubstr(command, StringFind(command, ":") + 1);
+        int new_sl = (int)StringToInteger(sl_str);
+        if(new_sl > 0)
+        {
+            StopLoss = new_sl;
+            Print("Stop Loss updated to: ", StopLoss);
+        }
+    }
+    else if(StringFind(command, "update_take_profit:") >= 0)
+    {
+        string tp_str = StringSubstr(command, StringFind(command, ":") + 1);
+        int new_tp = (int)StringToInteger(tp_str);
+        if(new_tp > 0)
+        {
+            TakeProfit = new_tp;
+            Print("Take Profit updated to: ", TakeProfit);
+        }
+    }
+}
+
+//+------------------------------------------------------------------+
+//| Check for commands from web interface                           |
+//+------------------------------------------------------------------+
+void CheckForCommands()
+{
+    string url = BackendURL + "/api/ea-bridge/instructions?secret=" + SecretKey;
+    string headers = "Content-Type: application/json\r\n";
+    
+    char result[];
+    int res = WebRequest("GET", url, headers, 5000, result, headers);
+    
+    if(res == 200)
+    {
+        string response = CharArrayToString(result);
+        Print("Received command response: ", response);
+        
+        // Parse response and handle commands
+        if(StringFind(response, "start_trading") >= 0)
+        {
+            HandleWebCommand("start_trading");
+        }
+        else if(StringFind(response, "stop_trading") >= 0)
+        {
+            HandleWebCommand("stop_trading");
+        }
+        else if(StringFind(response, "update_lot_size:") >= 0)
+        {
+            // Extract lot size from response
+            int start_pos = StringFind(response, "update_lot_size:");
+            if(start_pos >= 0)
+            {
+                string command = StringSubstr(response, start_pos);
+                int end_pos = StringFind(command, ",");
+                if(end_pos < 0) end_pos = StringLen(command);
+                command = StringSubstr(command, 0, end_pos);
+                HandleWebCommand(command);
+            }
+        }
+    }
+    else if(res != 0) // 0 means no response, which is normal
+    {
+        Print("Failed to check for commands. Error: ", res);
+    }
 }
