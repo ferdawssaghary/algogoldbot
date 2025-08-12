@@ -86,6 +86,9 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
               currency: data.currency
             });
           }
+        } else if (data?.type === 'order_result') {
+          // Handle order results - could be used for notifications
+          console.log('Order result received:', data);
         }
       } catch (error) {
         console.error('Error parsing WebSocket message:', error);

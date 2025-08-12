@@ -10,42 +10,11 @@ const authHeader = () => ({ 'Authorization': `Bearer ${localStorage.getItem('tok
 const TradingPage: React.FC = () => {
   const { t } = useLanguage();
   const { connected, lastTick, accountInfo } = useWebSocket();
-  const wsRef = useRef<WebSocket | null>(null);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<string>('');
   const [lot, setLot] = useState(0.01);
   const [sl, setSl] = useState(50);
   const [tp, setTp] = useState(100);
-  
-  // Get WebSocket reference
-  React.useEffect(() => {
-    const ws = new WebSocket('ws://localhost:8000/ws/mt5?secret=g4dV6pG9qW2z8K1rY7tB3nM5xC0hL2sD');
-    wsRef.current = ws;
-    
-    ws.onopen = () => {
-      console.log('Trading WebSocket connected');
-    };
-    
-    ws.onmessage = (ev) => {
-      try {
-        const data = JSON.parse(ev.data);
-        if (data?.type === 'order_result') {
-          if (data.success) {
-            toast.success(`Order placed successfully! Ticket: ${data.ticket}`);
-          } else {
-            toast.error(`Order failed: ${data.message}`);
-          }
-          setLoading(false);
-        }
-      } catch (error) {
-        console.error('Error parsing order result:', error);
-      }
-    };
-    
-    return () => {
-      ws.close();
-    };
-  }, []);
 
   const startTrading = async () => {
     setLoading(true);
@@ -76,7 +45,7 @@ const TradingPage: React.FC = () => {
   };
 
   const testOrder = async (side: 'BUY' | 'SELL') => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+    if (!connected) {
       toast.error('WebSocket not connected');
       return;
     }
@@ -99,7 +68,38 @@ const TradingPage: React.FC = () => {
       comment: `Manual ${side} order`
     };
     
-    wsRef.current.send(JSON.stringify(orderMessage));
+    // Send order through the WebSocket context
+    // Note: We need to access the WebSocket instance from the context
+    // For now, we'll use a simple approach by making a direct API call
+    try {
+      const response = await fetch('/api/trading/place-order', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeader()
+        },
+        body: JSON.stringify({
+          symbol: 'XAUUSD',
+          order_type: side,
+          volume: lot,
+          price: currentPrice,
+          sl: slPrice,
+          tp: tpPrice,
+          comment: `Manual ${side} order`
+        })
+      });
+      
+      const result = await response.json();
+      if (result.success) {
+        toast.success(`Order placed successfully! Ticket: ${result.ticket}`);
+      } else {
+        toast.error(`Order failed: ${result.message}`);
+      }
+    } catch (error) {
+      toast.error('Failed to place order');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

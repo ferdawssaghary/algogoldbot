@@ -151,3 +151,45 @@ async def test_order(
     if not res:
         raise HTTPException(status_code=400, detail="Order placement failed")
     return {"success": True, "result": res}
+
+@router.post("/place-order")
+async def place_order(
+    request: Request,
+    payload: dict,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Place a manual order through the trading interface"""
+    mt5 = getattr(request.app.state, "mt5_service", None)
+    if not mt5:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="MT5 service unavailable")
+    
+    try:
+        # Place order using the provided parameters
+        res = await mt5.place_order(
+            symbol=payload.get("symbol", "XAUUSD"),
+            order_type=payload.get("order_type", "BUY"),
+            lot_size=payload.get("volume", 0.01),
+            price=payload.get("price"),
+            stop_loss=payload.get("sl"),
+            take_profit=payload.get("tp"),
+            comment=payload.get("comment", "Manual order from UI")
+        )
+        
+        if res and res.get("success"):
+            return {
+                "success": True,
+                "ticket": res.get("ticket", 0),
+                "message": "Order placed successfully"
+            }
+        else:
+            return {
+                "success": False,
+                "message": res.get("message", "Order placement failed") if res else "Order placement failed"
+            }
+            
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Error placing order: {str(e)}"
+        }
