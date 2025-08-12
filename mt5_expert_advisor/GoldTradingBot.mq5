@@ -50,6 +50,11 @@ bool websocket_connected = false;
 bool trading_enabled = true;
 datetime last_update_time = 0;
 
+// Modifiable parameters (for remote control)
+double current_lot_size = LotSize;
+int current_stop_loss = StopLoss;
+int current_take_profit = TakeProfit;
+
 // Trading objects
 #include <Trade\Trade.mqh>
 #include <Indicators\Indicators.mqh>
@@ -228,10 +233,10 @@ int AnalyzeMarket()
 //+------------------------------------------------------------------+
 void OpenBuyOrder(double price)
 {
-    double sl = price - StopLoss * point_value * 10;
-    double tp = price + TakeProfit * point_value * 10;
+    double sl = price - current_stop_loss * point_value * 10;
+    double tp = price + current_take_profit * point_value * 10;
     
-    if(trade.Buy(LotSize, EA_Symbol, price, sl, tp, "Gold Bot Buy"))
+    if(trade.Buy(current_lot_size, EA_Symbol, price, sl, tp, "Gold Bot Buy"))
     {
         daily_trades_count++;
         Print("Buy order opened at ", price, " SL: ", sl, " TP: ", tp);
@@ -253,10 +258,10 @@ void OpenBuyOrder(double price)
 //+------------------------------------------------------------------+
 void OpenSellOrder(double price)
 {
-    double sl = price + StopLoss * point_value * 10;
-    double tp = price - TakeProfit * point_value * 10;
+    double sl = price + current_stop_loss * point_value * 10;
+    double tp = price - current_take_profit * point_value * 10;
     
-    if(trade.Sell(LotSize, EA_Symbol, price, sl, tp, "Gold Bot Sell"))
+    if(trade.Sell(current_lot_size, EA_Symbol, price, sl, tp, "Gold Bot Sell"))
     {
         daily_trades_count++;
         Print("Sell order opened at ", price, " SL: ", sl, " TP: ", tp);
@@ -321,7 +326,7 @@ void UpdateAccountInfo()
     double balance = AccountInfoDouble(ACCOUNT_BALANCE);
     double equity = AccountInfoDouble(ACCOUNT_EQUITY);
     double margin = AccountInfoDouble(ACCOUNT_MARGIN);
-    double free_margin = AccountInfoDouble(ACCOUNT_FREEMARGIN);
+    double free_margin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
     
     Comment(StringFormat("Balance: %.2f | Equity: %.2f | Margin: %.2f | Free: %.2f | Trades: %d | Trading: %s | WS: %s",
                         balance, equity, margin, free_margin, daily_trades_count, 
@@ -343,7 +348,7 @@ void InitializeWebSocket()
     char post[], result[];
     StringToCharArray(data, post);
     
-    int res = WebRequest("POST", url, headers, 5000, post, result, headers);
+    int res = WebRequest("POST", url, headers, 5000, post, result);
     
     if(res == 200)
     {
@@ -372,7 +377,7 @@ void AlternativeConnection()
     string headers = "Content-Type: application/json\r\n";
     
     char result[];
-    int res = WebRequest("GET", url, headers, 5000, result, headers);
+    int res = WebRequest("GET", url, headers, 5000, result);
     
     if(res == 200)
     {
@@ -415,7 +420,7 @@ void SendAccountInfo()
     char post[], result[];
     StringToCharArray(data, post);
     
-    int res = WebRequest("POST", url, headers, 5000, post, result, headers);
+    int res = WebRequest("POST", url, headers, 5000, post, result);
     if(res != 200)
     {
         Print("Failed to send account info. Error: ", res);
@@ -440,7 +445,7 @@ void SendMarketData()
     char post[], result[];
     StringToCharArray(data, post);
     
-    int res = WebRequest("POST", url, headers, 5000, post, result, headers);
+    int res = WebRequest("POST", url, headers, 5000, post, result);
     if(res != 200)
     {
         Print("Failed to send market data. Error: ", res);
@@ -457,12 +462,12 @@ void SendTradeNotification(string trade_type, double price, double sl, double tp
     string url = BackendURL + "/api/ea-bridge/trade-event";
     string headers = "Content-Type: application/json\r\nX-EA-SECRET: " + SecretKey + "\r\n";
     string data = StringFormat("{\"ticket\":%d,\"symbol\":\"%s\",\"type\":\"%s\",\"volume\":%.2f,\"price\":%.5f,\"comment\":\"EA %s order\"}", 
-                              trade.ResultOrder(), EA_Symbol, trade_type, LotSize, price, trade_type);
+                              trade.ResultOrder(), EA_Symbol, trade_type, current_lot_size, price, trade_type);
     
     char post[], result[];
     StringToCharArray(data, post);
     
-    int res = WebRequest("POST", url, headers, 5000, post, result, headers);
+    int res = WebRequest("POST", url, headers, 5000, post, result);
     if(res != 200)
     {
         Print("Failed to send trade notification. Error: ", res);
@@ -490,8 +495,8 @@ void HandleWebCommand(string command)
         double new_lot = StringToDouble(lot_str);
         if(new_lot > 0)
         {
-            LotSize = new_lot;
-            Print("Lot size updated to: ", LotSize);
+            current_lot_size = new_lot;
+            Print("Lot size updated to: ", current_lot_size);
         }
     }
     else if(StringFind(command, "update_stop_loss:") >= 0)
@@ -500,8 +505,8 @@ void HandleWebCommand(string command)
         int new_sl = (int)StringToInteger(sl_str);
         if(new_sl > 0)
         {
-            StopLoss = new_sl;
-            Print("Stop Loss updated to: ", StopLoss);
+            current_stop_loss = new_sl;
+            Print("Stop Loss updated to: ", current_stop_loss);
         }
     }
     else if(StringFind(command, "update_take_profit:") >= 0)
@@ -510,8 +515,8 @@ void HandleWebCommand(string command)
         int new_tp = (int)StringToInteger(tp_str);
         if(new_tp > 0)
         {
-            TakeProfit = new_tp;
-            Print("Take Profit updated to: ", TakeProfit);
+            current_take_profit = new_tp;
+            Print("Take Profit updated to: ", current_take_profit);
         }
     }
 }
@@ -539,7 +544,7 @@ void CheckForCommands()
     string headers = "Content-Type: application/json\r\n";
     
     char result[];
-    int res = WebRequest("GET", url, headers, 5000, result, headers);
+    int res = WebRequest("GET", url, headers, 5000, result);
     
     if(res == 200)
     {
