@@ -339,13 +339,33 @@ void UpdateAccountInfo()
 //+------------------------------------------------------------------+
 void InitializeWebSocket()
 {
-    // For now, we'll simulate a successful connection
-    // WebRequest functionality can be enabled later when properly configured
-    websocket_connected = true;
-    Print("WebSocket connection initialized successfully");
-    Print("WebSocket URL: ", WebSocketURL);
-    Print("Secret Key: ", SecretKey);
-    Print("Note: WebRequest functionality is disabled for compilation compatibility");
+    // Send initial connection request to backend
+    string url = BackendURL + "/api/ea-bridge/connect";
+    string headers = "Content-Type: application/json\r\nX-EA-SECRET: " + SecretKey + "\r\n";
+    string data = StringFormat("{\"symbol\":\"%s\",\"account\":\"%d\",\"server\":\"%s\",\"websocket_url\":\"%s\"}", 
+                              EA_Symbol, AccountInfoInteger(ACCOUNT_LOGIN), AccountInfoString(ACCOUNT_SERVER), WebSocketURL);
+    
+    char post[], result[];
+    string response_headers;
+    StringToCharArray(data, post);
+    
+    int res = WebRequest("POST", url, headers, 5000, post, result, response_headers);
+    
+    if(res == 200)
+    {
+        websocket_connected = true;
+        Print("WebSocket connection initialized successfully");
+        Print("WebSocket URL: ", WebSocketURL);
+        Print("Secret Key: ", SecretKey);
+    }
+    else
+    {
+        Print("Failed to initialize WebSocket connection. Error: ", res);
+        Print("Trying alternative connection method...");
+        
+        // Try alternative connection method
+        AlternativeConnection();
+    }
 }
 
 //+------------------------------------------------------------------+
@@ -354,11 +374,24 @@ void InitializeWebSocket()
 void AlternativeConnection()
 {
     // Try to connect using the health endpoint
-    // For now, we'll simulate a successful connection
-    // WebRequest functionality can be enabled later when properly configured
-    websocket_connected = true;
-    Print("Alternative connection successful");
-    Print("Backend is running, WebSocket simulation enabled");
+    string url = BackendURL + "/health";
+    string headers = "Content-Type: application/json\r\n";
+    
+    char result[];
+    string response_headers;
+    int res = WebRequest("GET", url, headers, 5000, result, response_headers);
+    
+    if(res == 200)
+    {
+        websocket_connected = true;
+        Print("Alternative connection successful");
+        Print("Backend is running, WebSocket simulation enabled");
+    }
+    else
+    {
+        Print("Backend not accessible. Error: ", res);
+        websocket_connected = false;
+    }
 }
 
 //+------------------------------------------------------------------+
@@ -381,9 +414,20 @@ void SendAccountInfo()
     double equity = AccountInfoDouble(ACCOUNT_EQUITY);
     double profit = AccountInfoDouble(ACCOUNT_PROFIT);
     
-    // For now, we'll just print the account info
-    // WebRequest functionality can be enabled later when properly configured
-    Print("Account Info - Balance: ", balance, " Equity: ", equity, " Profit: ", profit);
+    string url = BackendURL + "/api/ea-bridge/account";
+    string headers = "Content-Type: application/json\r\nX-EA-SECRET: " + SecretKey + "\r\n";
+    string data = StringFormat("{\"balance\":%.2f,\"equity\":%.2f,\"profit\":%.2f,\"margin\":%.2f}", 
+                              balance, equity, profit, AccountInfoDouble(ACCOUNT_MARGIN));
+    
+    char post[], result[];
+    string response_headers;
+    StringToCharArray(data, post);
+    
+    int res = WebRequest("POST", url, headers, 5000, post, result, response_headers);
+    if(res != 200)
+    {
+        Print("Failed to send account info. Error: ", res);
+    }
 }
 
 //+------------------------------------------------------------------+
@@ -396,9 +440,20 @@ void SendMarketData()
     double bid = SymbolInfoDouble(EA_Symbol, SYMBOL_BID);
     double ask = SymbolInfoDouble(EA_Symbol, SYMBOL_ASK);
     
-    // For now, we'll just print the market data
-    // WebRequest functionality can be enabled later when properly configured
-    Print("Market Data - Symbol: ", EA_Symbol, " Bid: ", bid, " Ask: ", ask);
+    string url = BackendURL + "/api/ea-bridge/tick";
+    string headers = "Content-Type: application/json\r\nX-EA-SECRET: " + SecretKey + "\r\n";
+    string data = StringFormat("{\"symbol\":\"%s\",\"bid\":%.5f,\"ask\":%.5f,\"time\":\"%s\"}", 
+                              EA_Symbol, bid, ask, TimeToString(TimeCurrent()));
+    
+    char post[], result[];
+    string response_headers;
+    StringToCharArray(data, post);
+    
+    int res = WebRequest("POST", url, headers, 5000, post, result, response_headers);
+    if(res != 200)
+    {
+        Print("Failed to send market data. Error: ", res);
+    }
 }
 
 //+------------------------------------------------------------------+
@@ -408,9 +463,20 @@ void SendTradeNotification(string trade_type, double price, double sl, double tp
 {
     if(!websocket_connected) return;
     
-    // For now, we'll just print the trade notification
-    // WebRequest functionality can be enabled later when properly configured
-    Print("Trade Notification - Type: ", trade_type, " Price: ", price, " SL: ", sl, " TP: ", tp);
+    string url = BackendURL + "/api/ea-bridge/trade-event";
+    string headers = "Content-Type: application/json\r\nX-EA-SECRET: " + SecretKey + "\r\n";
+    string data = StringFormat("{\"ticket\":%d,\"symbol\":\"%s\",\"type\":\"%s\",\"volume\":%.2f,\"price\":%.5f,\"comment\":\"EA %s order\"}", 
+                              trade.ResultOrder(), EA_Symbol, trade_type, current_lot_size, price, trade_type);
+    
+    char post[], result[];
+    string response_headers;
+    StringToCharArray(data, post);
+    
+    int res = WebRequest("POST", url, headers, 5000, post, result, response_headers);
+    if(res != 200)
+    {
+        Print("Failed to send trade notification. Error: ", res);
+    }
 }
 
 //+------------------------------------------------------------------+
@@ -479,7 +545,43 @@ void OnTimer()
 //+------------------------------------------------------------------+
 void CheckForCommands()
 {
-    // For now, we'll skip command checking
-    // WebRequest functionality can be enabled later when properly configured
-    // This prevents compilation errors while maintaining the EA structure
+    string url = BackendURL + "/api/ea-bridge/instructions?secret=" + SecretKey;
+    string headers = "Content-Type: application/json\r\n";
+    
+    char result[];
+    string response_headers;
+    int res = WebRequest("GET", url, headers, 5000, result, response_headers);
+    
+    if(res == 200)
+    {
+        string response = CharArrayToString(result);
+        Print("Received command response: ", response);
+        
+        // Parse response and handle commands
+        if(StringFind(response, "start_trading") >= 0)
+        {
+            HandleWebCommand("start_trading");
+        }
+        else if(StringFind(response, "stop_trading") >= 0)
+        {
+            HandleWebCommand("stop_trading");
+        }
+        else if(StringFind(response, "update_lot_size:") >= 0)
+        {
+            // Extract lot size from response
+            int start_pos = StringFind(response, "update_lot_size:");
+            if(start_pos >= 0)
+            {
+                string command = StringSubstr(response, start_pos);
+                int end_pos = StringFind(command, ",");
+                if(end_pos < 0) end_pos = StringLen(command);
+                command = StringSubstr(command, 0, end_pos);
+                HandleWebCommand(command);
+            }
+        }
+    }
+    else if(res != 0) // 0 means no response, which is normal
+    {
+        Print("Failed to check for commands. Error: ", res);
+    }
 }
