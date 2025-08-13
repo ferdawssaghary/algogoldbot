@@ -378,8 +378,7 @@ void AlternativeConnection()
     string headers = "Content-Type: application/json\r\n";
     
     char result[];
-    string response_headers;
-    int res = WebRequest("GET", url, headers, 5000, result, response_headers);
+    int res = WebRequest("GET", url, headers, 5000, result);
     
     if(res == 200)
     {
@@ -549,8 +548,7 @@ void CheckForCommands()
     string headers = "Content-Type: application/json\r\n";
     
     char result[];
-    string response_headers;
-    int res = WebRequest("GET", url, headers, 5000, result, response_headers);
+    int res = WebRequest("GET", url, headers, 5000, result);
     
     if(res == 200)
     {
