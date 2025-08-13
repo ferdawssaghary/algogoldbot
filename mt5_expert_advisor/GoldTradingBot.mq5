@@ -146,7 +146,7 @@ void OnTick()
     }
     
     // Check spread
-    double spread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD) * point_value / point_value;
+    double spread = SymbolInfoInteger(EA_Symbol, SYMBOL_SPREAD) * point_value / point_value;
     if(spread > MaxSpread)
     {
         Comment("Spread too high: ", spread);
@@ -168,8 +168,8 @@ void OnTick()
     }
     
     // Get current market data
-    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+    double ask = SymbolInfoDouble(EA_Symbol, SYMBOL_ASK);
+    double bid = SymbolInfoDouble(EA_Symbol, SYMBOL_BID);
     
     // Analyze market and generate signals
     int signal = AnalyzeMarket();

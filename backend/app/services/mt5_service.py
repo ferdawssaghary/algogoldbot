@@ -68,20 +68,9 @@ class MT5Service:
                 await self.initialize()
             
             if not MT5_AVAILABLE:
-                # Mock connection for development
-                self.current_account = {
-                    'login': login,
-                    'server': server,
-                    'name': 'Mock Account',
-                    'balance': 10000.0,
-                    'equity': 10000.0,
-                    'margin': 0.0,
-                    'free_margin': 10000.0,
-                    'margin_level': 0.0,
-                    'currency': 'USD'
-                }
-                logger.info(f"Mock MT5 connection established for account: {login}")
-                return True
+                logger.error("MetaTrader5 package not available. Cannot connect to real MT5 account.")
+                logger.error("Please install MetaTrader5 package for production use.")
+                return False
             
             # Decrypt password
             decrypted_password = decrypt_sensitive_data(password)
@@ -137,7 +126,8 @@ class MT5Service:
             return False
         
         if not MT5_AVAILABLE:
-            return self.current_account is not None
+            logger.error("MetaTrader5 package not available. Cannot check connection.")
+            return False
         
         account_info = mt5.account_info()
         return account_info is not None
@@ -149,19 +139,8 @@ class MT5Service:
                 return None
             
             if not MT5_AVAILABLE:
-                # Return mock account info
-                return {
-                    'login': self.current_account['login'],
-                    'balance': self.current_account['balance'],
-                    'equity': self.current_account['equity'],
-                    'margin': self.current_account['margin'],
-                    'free_margin': self.current_account['free_margin'],
-                    'margin_level': self.current_account['margin_level'],
-                    'profit': 0.0,
-                    'currency': self.current_account['currency'],
-                    'leverage': 100,
-                    'timestamp': datetime.now()
-                }
+                logger.error("MetaTrader5 package not available. Cannot get real account info.")
+                return None
             
             account_info = mt5.account_info()
             if account_info is None:
@@ -191,22 +170,8 @@ class MT5Service:
                 return None
             
             if not MT5_AVAILABLE:
-                # Return mock symbol info
-                return {
-                    'symbol': symbol,
-                    'bid': 2000.0,
-                    'ask': 2000.5,
-                    'spread': 0.5,
-                    'point': 0.01,
-                    'digits': 2,
-                    'trade_mode': 4,
-                    'min_lot': 0.01,
-                    'max_lot': 100.0,
-                    'lot_step': 0.01,
-                    'tick_value': 1.0,  # approximate for XAUUSD per 0.01 per 1 lot
-                    'contract_size': 100.0,
-                    'timestamp': datetime.now()
-                }
+                logger.error("MetaTrader5 package not available. Cannot get real symbol info.")
+                return None
             
             symbol_info = mt5.symbol_info(symbol)
             if symbol_info is None:
@@ -239,16 +204,8 @@ class MT5Service:
                 return None
             
             if not MT5_AVAILABLE:
-                # Return mock market data
-                return {
-                    'symbol': symbol,
-                    'bid': 2000.0,
-                    'ask': 2000.5,
-                    'last': 2000.25,
-                    'volume': 1000,
-                    'time': datetime.now(),
-                    'timestamp': datetime.now()
-                }
+                logger.error("MetaTrader5 package not available. Cannot get real market data.")
+                return None
             
             tick = mt5.symbol_info_tick(symbol)
             if tick is None:
@@ -285,23 +242,8 @@ class MT5Service:
                 return None
             
             if not MT5_AVAILABLE:
-                # Mock order placement
-                import random
-                ticket = random.randint(100000, 999999)
-                current_price = 2000.0 if price is None else price
-                
-                return {
-                    'retcode': 10009,  # TRADE_RETCODE_DONE
-                    'ticket': ticket,
-                    'order': ticket,
-                    'volume': lot_size,
-                    'price': current_price,
-                    'bid': current_price - 0.5,
-                    'ask': current_price + 0.5,
-                    'comment': comment,
-                    'request_id': ticket,
-                    'retcode_external': 0
-                }
+                logger.error("MetaTrader5 package not available. Cannot place real orders.")
+                return None
             
             # Prepare order request
             order_type_mapping = {
@@ -381,9 +323,8 @@ class MT5Service:
                 return False
             
             if not MT5_AVAILABLE:
-                # Mock position closing
-                logger.info(f"Mock: Position {ticket} closed successfully")
-                return True
+                logger.error("MetaTrader5 package not available. Cannot close real positions.")
+                return False
             
             # Get position info
             position = mt5.positions_get(ticket=ticket)
@@ -429,7 +370,7 @@ class MT5Service:
                 return []
             
             if not MT5_AVAILABLE:
-                # Return mock positions
+                logger.error("MetaTrader5 package not available. Cannot get real positions.")
                 return []
             
             positions = mt5.positions_get(symbol=symbol)
@@ -470,7 +411,7 @@ class MT5Service:
                 return []
             
             if not MT5_AVAILABLE:
-                # Return mock trade history
+                logger.error("MetaTrader5 package not available. Cannot get real trade history.")
                 return []
             
             if date_from is None:
@@ -533,22 +474,8 @@ class MT5Service:
                 return None
             
             if not MT5_AVAILABLE:
-                # Return mock price data
-                import numpy as np
-                dates = pd.date_range(end=datetime.now(), periods=count, freq='H')
-                base_price = 2000.0
-                prices = base_price + np.cumsum(np.random.randn(count) * 0.5)
-                
-                df = pd.DataFrame({
-                    'time': dates,
-                    'open': prices,
-                    'high': prices + np.random.rand(count) * 2,
-                    'low': prices - np.random.rand(count) * 2,
-                    'close': prices + np.random.randn(count) * 0.5,
-                    'tick_volume': np.random.randint(100, 1000, count)
-                })
-                df.set_index('time', inplace=True)
-                return df
+                logger.error("MetaTrader5 package not available. Cannot get real price data.")
+                return None
             
             timeframe_mapping = {
                 'M1': mt5.TIMEFRAME_M1,

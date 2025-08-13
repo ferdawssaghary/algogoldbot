@@ -60,9 +60,9 @@ async def lifespan(app: FastAPI):
             if connection_success:
                 logger.info("Successfully connected to MT5 account")
             else:
-                logger.warning("Failed to connect to MT5 account, running in mock mode")
+                logger.error("Failed to connect to MT5 account. Trading functionality will be limited.")
         else:
-            logger.info("No MT5 credentials configured, running in mock mode")
+            logger.warning("No MT5 credentials configured. Please configure MT5 credentials for full functionality.")
         
         telegram_service = TelegramService(mt5_service)
         trading_engine = TradingEngine(mt5_service, telegram_service)

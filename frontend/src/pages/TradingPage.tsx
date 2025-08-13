@@ -53,7 +53,12 @@ const TradingPage: React.FC = () => {
     setLoading(true);
     
     // Calculate SL and TP based on current price
-    const currentPrice = lastTick?.ask || 2000; // fallback price
+    const currentPrice = lastTick?.ask;
+    if (!currentPrice) {
+      toast.error('No current price available. Please wait for market data.');
+      setLoading(false);
+      return;
+    }
     const slPrice = side === 'BUY' ? currentPrice - (sl * 0.1) : currentPrice + (sl * 0.1);
     const tpPrice = side === 'BUY' ? currentPrice + (tp * 0.1) : currentPrice - (tp * 0.1);
     
