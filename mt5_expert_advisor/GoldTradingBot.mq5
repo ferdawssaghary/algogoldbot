@@ -346,9 +346,10 @@ void InitializeWebSocket()
                               EA_Symbol, AccountInfoInteger(ACCOUNT_LOGIN), AccountInfoString(ACCOUNT_SERVER), WebSocketURL);
     
     char post[], result[];
+    string response_headers;
     StringToCharArray(data, post);
     
-    int res = WebRequest("POST", url, headers, 5000, post, result);
+    int res = WebRequest("POST", url, headers, 5000, post, result, response_headers);
     
     if(res == 200)
     {
@@ -377,7 +378,8 @@ void AlternativeConnection()
     string headers = "Content-Type: application/json\r\n";
     
     char result[];
-    int res = WebRequest("GET", url, headers, 5000, result);
+    string response_headers;
+    int res = WebRequest("GET", url, headers, 5000, result, response_headers);
     
     if(res == 200)
     {
@@ -418,9 +420,10 @@ void SendAccountInfo()
                               balance, equity, profit, AccountInfoDouble(ACCOUNT_MARGIN));
     
     char post[], result[];
+    string response_headers;
     StringToCharArray(data, post);
     
-    int res = WebRequest("POST", url, headers, 5000, post, result);
+    int res = WebRequest("POST", url, headers, 5000, post, result, response_headers);
     if(res != 200)
     {
         Print("Failed to send account info. Error: ", res);
@@ -443,9 +446,10 @@ void SendMarketData()
                               EA_Symbol, bid, ask, TimeToString(TimeCurrent()));
     
     char post[], result[];
+    string response_headers;
     StringToCharArray(data, post);
     
-    int res = WebRequest("POST", url, headers, 5000, post, result);
+    int res = WebRequest("POST", url, headers, 5000, post, result, response_headers);
     if(res != 200)
     {
         Print("Failed to send market data. Error: ", res);
@@ -465,9 +469,10 @@ void SendTradeNotification(string trade_type, double price, double sl, double tp
                               trade.ResultOrder(), EA_Symbol, trade_type, current_lot_size, price, trade_type);
     
     char post[], result[];
+    string response_headers;
     StringToCharArray(data, post);
     
-    int res = WebRequest("POST", url, headers, 5000, post, result);
+    int res = WebRequest("POST", url, headers, 5000, post, result, response_headers);
     if(res != 200)
     {
         Print("Failed to send trade notification. Error: ", res);
@@ -544,7 +549,8 @@ void CheckForCommands()
     string headers = "Content-Type: application/json\r\n";
     
     char result[];
-    int res = WebRequest("GET", url, headers, 5000, result);
+    string response_headers;
+    int res = WebRequest("GET", url, headers, 5000, result, response_headers);
     
     if(res == 200)
     {
