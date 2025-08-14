@@ -339,28 +339,25 @@ void UpdateAccountInfo()
 //+------------------------------------------------------------------+
 void InitializeWebSocket()
 {
-    // Send initial connection request to backend
-    string url = BackendURL + "/api/ea-bridge/connect";
-    string headers = "Content-Type: application/json\r\nX-EA-SECRET: " + SecretKey + "\r\n";
-    string data = StringFormat("{\"symbol\":\"%s\",\"account\":\"%d\",\"server\":\"%s\",\"websocket_url\":\"%s\"}", 
-                              EA_Symbol, AccountInfoInteger(ACCOUNT_LOGIN), AccountInfoString(ACCOUNT_SERVER), WebSocketURL);
+    // Verify backend reachability and secret via instructions endpoint
+    string url = BackendURL + "/api/ea/instructions?secret=" + SecretKey;
+    string headers = "Content-Type: application/json\r\n";
     
-    char post[], result[];
+    uchar post[], result[];
     string response_headers;
-    StringToCharArray(data, post);
+    ArrayResize(post, 0);
     
-    int res = WebRequest("POST", url, headers, 5000, post, result, response_headers);
+    int res = WebRequest("GET", url, headers, 5000, post, result, response_headers);
     
     if(res == 200)
     {
         websocket_connected = true;
-        Print("WebSocket connection initialized successfully");
-        Print("WebSocket URL: ", WebSocketURL);
-        Print("Secret Key: ", SecretKey);
+        Print("Backend connection initialized successfully");
+        Print("Backend URL: ", BackendURL);
     }
     else
     {
-        Print("Failed to initialize WebSocket connection. Error: ", res);
+        Print("Failed to initialize backend connection. Error: ", res);
         Print("Trying alternative connection method...");
         
         // Try alternative connection method
@@ -377,9 +374,10 @@ void AlternativeConnection()
     string url = BackendURL + "/health";
     string headers = "Content-Type: application/json\r\n";
     
-    char result[];
+    uchar post[], result[];
     string response_headers;
-    int res = WebRequest("GET", url, headers, 5000, result, response_headers);
+    ArrayResize(post, 0);
+    int res = WebRequest("GET", url, headers, 5000, post, result, response_headers);
     
     if(res == 200)
     {
@@ -414,12 +412,12 @@ void SendAccountInfo()
     double equity = AccountInfoDouble(ACCOUNT_EQUITY);
     double profit = AccountInfoDouble(ACCOUNT_PROFIT);
     
-    string url = BackendURL + "/api/ea-bridge/account";
+    string url = BackendURL + "/api/ea/account";
     string headers = "Content-Type: application/json\r\nX-EA-SECRET: " + SecretKey + "\r\n";
     string data = StringFormat("{\"balance\":%.2f,\"equity\":%.2f,\"profit\":%.2f,\"margin\":%.2f}", 
                               balance, equity, profit, AccountInfoDouble(ACCOUNT_MARGIN));
     
-    char post[], result[];
+    uchar post[], result[];
     string response_headers;
     StringToCharArray(data, post);
     
@@ -440,12 +438,12 @@ void SendMarketData()
     double bid = SymbolInfoDouble(EA_Symbol, SYMBOL_BID);
     double ask = SymbolInfoDouble(EA_Symbol, SYMBOL_ASK);
     
-    string url = BackendURL + "/api/ea-bridge/tick";
+    string url = BackendURL + "/api/ea/tick";
     string headers = "Content-Type: application/json\r\nX-EA-SECRET: " + SecretKey + "\r\n";
     string data = StringFormat("{\"symbol\":\"%s\",\"bid\":%.5f,\"ask\":%.5f,\"time\":\"%s\"}", 
                               EA_Symbol, bid, ask, TimeToString(TimeCurrent()));
     
-    char post[], result[];
+    uchar post[], result[];
     string response_headers;
     StringToCharArray(data, post);
     
@@ -463,12 +461,12 @@ void SendTradeNotification(string trade_type, double price, double sl, double tp
 {
     if(!websocket_connected) return;
     
-    string url = BackendURL + "/api/ea-bridge/trade-event";
+    string url = BackendURL + "/api/ea/trade-event";
     string headers = "Content-Type: application/json\r\nX-EA-SECRET: " + SecretKey + "\r\n";
     string data = StringFormat("{\"ticket\":%d,\"symbol\":\"%s\",\"type\":\"%s\",\"volume\":%.2f,\"price\":%.5f,\"comment\":\"EA %s order\"}", 
                               trade.ResultOrder(), EA_Symbol, trade_type, current_lot_size, price, trade_type);
     
-    char post[], result[];
+    uchar post[], result[];
     string response_headers;
     StringToCharArray(data, post);
     
@@ -545,12 +543,13 @@ void OnTimer()
 //+------------------------------------------------------------------+
 void CheckForCommands()
 {
-    string url = BackendURL + "/api/ea-bridge/instructions?secret=" + SecretKey;
+    string url = BackendURL + "/api/ea/instructions?secret=" + SecretKey;
     string headers = "Content-Type: application/json\r\n";
     
-    char result[];
+    uchar post[], result[];
     string response_headers;
-    int res = WebRequest("GET", url, headers, 5000, result, response_headers);
+    ArrayResize(post, 0);
+    int res = WebRequest("GET", url, headers, 5000, post, result, response_headers);
     
     if(res == 200)
     {

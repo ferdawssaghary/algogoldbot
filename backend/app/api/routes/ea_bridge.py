@@ -141,3 +141,21 @@ async def ea_instructions(request: Request):
     items = list(queue)
     queue.clear()
     return {"instructions": items}
+
+@router.post("/enqueue")
+async def enqueue_instruction(
+    request: Request,
+    payload: InstructionOut,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    try:
+        app = request.app
+        queue: List[Dict[str, Any]] = getattr(app.state, "ea_instruction_queue", None)
+        if queue is None:
+            raise RuntimeError("Instruction queue not available")
+        item = payload.dict()
+        queue.append(item)
+        return {"success": True, "enqueued": item}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to enqueue instruction: {e}")

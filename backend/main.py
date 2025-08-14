@@ -6,10 +6,11 @@ XAUUSD Automated Trading System with MetaTrader 5 Integration
 
 import asyncio
 import json
+import os
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks
+from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.security import HTTPBearer
@@ -43,7 +44,10 @@ async def lifespan(app: FastAPI):
     
     try:
         # Initialize database
-        await init_db()
+        if str(settings.DATABASE_URL).startswith("postgres"):
+            await init_db()
+        else:
+            logger.warning(f"Skipping DB init for non-Postgres DATABASE_URL: {settings.DATABASE_URL}")
         logger.info("Database initialized successfully")
         
         # Initialize services
@@ -261,7 +265,7 @@ async def stop_trading(
 
 # WebSocket endpoint for real-time updates
 @app.websocket("/ws/{user_id}")
-async def websocket_endpoint(websocket, user_id: int):
+async def websocket_endpoint(websocket: WebSocket, user_id: int):
     """WebSocket endpoint for real-time trading updates"""
     await websocket.accept()
     
@@ -281,7 +285,7 @@ async def websocket_endpoint(websocket, user_id: int):
 
 # MT5 WebSocket endpoint for direct MT5 connection
 @app.websocket("/ws/mt5")
-async def mt5_websocket_endpoint(websocket):
+async def mt5_websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for direct MT5 connection"""
     await websocket.accept()
     
@@ -329,7 +333,7 @@ async def mt5_websocket_endpoint(websocket):
                 elif message.get("type") == "get_tick":
                     symbol = message.get("symbol", "XAUUSD")
                     if mt5_service:
-                        tick = await mt5_service.get_symbol_info_tick(symbol)
+                        tick = await mt5_service.get_market_data(symbol)
                         if tick:
                             tick_data = {
                                 "type": "account_status",

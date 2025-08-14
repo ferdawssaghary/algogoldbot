@@ -54,24 +54,31 @@ The updated Expert Advisor (EA) integrates with your WebSocket-based trading int
 - **Max Daily Trades**: 10
 - **Magic Number**: 12345 (unique identifier)
 
-#### **WebSocket Settings**
-- **Backend URL**: `http://localhost:8000`
+#### WebSocket and API Settings
+- **Backend URL**: `http://localhost:8000` (WSL) or `http://host.docker.internal:8000` (MT5 on Windows, backend in Docker/WSL)
 - **Secret Key**: `g4dV6pG9qW2z8K1rY7tB3nM5xC0hL2sD`
 - **Enable WebSocket**: `true`
 - **Update Interval**: 1000ms
 
+Note: The EA uses HTTP endpoints (not direct WS) for bridge:
+- POST `/api/ea/account`
+- POST `/api/ea/tick`
+- POST `/api/ea/trade-event`
+- GET `/api/ea/instructions?secret=...`
+
+If MT5 runs on Windows and backend runs inside Docker/WSL, use `BackendURL = "http://host.docker.internal:8000"` in EA inputs and add the same URL to MT5 WebRequest allow-list.
+
 ### Step 3: Enable Web Requests
 
-1. **In MetaTrader 5**:
-   - Go to **Tools** → **Options** → **Expert Advisors**
-   - Check **"Allow WebRequest for listed URL"**
-   - Add: `http://localhost:8000`
+1. In MetaTrader 5: Tools → Options → Expert Advisors → check "Allow WebRequest for listed URL" and add:
+   - `http://localhost:8000`
+   - `http://host.docker.internal:8000` (when MT5 is on Windows, backend in Docker)
 
-2. **Alternative method**:
-   - Add this line to the EA code (after the input parameters):
-   ```mql5
-   #property tester_web_request "http://localhost:8000"
-   ```
+2. Alternatively, add to EA code:
+```mql5
+#property tester_web_request "http://localhost:8000"
+#property tester_web_request "http://host.docker.internal:8000"
+```
 
 ### Step 4: Attach EA to Chart
 

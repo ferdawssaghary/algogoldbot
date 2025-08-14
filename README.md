@@ -330,3 +330,11 @@ This project is proprietary software developed for gold trading automation. Unau
 
 **🏆 Gold Trading Bot - Professional Automated Trading Solution**
 *Developed with ❤️ for profitable XAUUSD trading*
+
+## 🪟 Windows + WSL + Docker Networking
+
+- If MetaTrader 5 (EA) runs on Windows and the backend runs in Docker/WSL, set EA `BackendURL` to `http://host.docker.internal:8000` and add this URL in MT5 WebRequest allow-list.
+- From Windows browser, access:
+  - Frontend: `http://localhost`
+  - API: `http://localhost/api` (or `http://host.docker.internal:8000` directly)
+- Docker compose uses bridge network; Nginx proxies `/api` and `/ws` to backend.
