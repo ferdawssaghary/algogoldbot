@@ -120,7 +120,7 @@ security = HTTPBearer()
 # Add middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.ALLOWED_HOSTS,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -292,10 +292,12 @@ async def websocket_endpoint(websocket: WebSocket, user_id: int):
 @app.websocket("/ws/mt5")
 async def mt5_websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for direct MT5 connection"""
+    logger.info("WebSocket connection attempt")
     await websocket.accept()
+    logger.info("WebSocket accepted")
     
     # Get secret from query parameters
-    secret = websocket.query_params.get("secret")
+    secret = websocket.query_params.get("secret", "")
     expected_secret = "g4dV6pG9qW2z8K1rY7tB3nM5xC0hL2sD"
     
     if secret != expected_secret:

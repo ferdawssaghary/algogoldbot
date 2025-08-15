@@ -38,7 +38,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   useEffect(() => {
     // Connect to MT5 WebSocket endpoint with secret
-    const wsUrl = `ws://localhost:8001?secret=g4dV6pG9qW2z8K1rY7tB3nM5xC0hL2sD`;
+    const wsUrl = `ws://localhost:8000/ws/mt5?secret=g4dV6pG9qW2z8K1rY7tB3nM5xC0hL2sD`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 

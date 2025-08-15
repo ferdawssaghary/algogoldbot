@@ -35,9 +35,9 @@ services:
     depends_on:
       - postgres
     volumes:
-      - ./mt5_data:/app/mt5_data
+      # - ./mt5_data:/app/mt5_data
       # Comment out Windows mount until properly configured:
-      # - /mnt/c/c/MT5Bridge:/app/mt5_data
+      - /mnt/c/c/MT5Bridge:/app/mt5_data
     restart: unless-stopped
     networks:
       - trading_network
