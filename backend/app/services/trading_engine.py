@@ -230,15 +230,23 @@ class TradingEngine:
             md = await self.mt5_service.get_market_data("XAUUSD")
             if not info and not md:
                 return
+            
+            # Safely convert values, handling None cases
+            def safe_float(value, default=0.0):
+                try:
+                    return float(value) if value is not None else default
+                except (ValueError, TypeError):
+                    return default
+            
             payload = {
                 "type": "account_status",
-                "balance": float(info.get("balance", 0.0)) if info else None,
-                "equity": float(info.get("equity", 0.0)) if info else None,
-                "profit": float(info.get("profit", 0.0)) if info else None,
+                "balance": safe_float(info.get("balance")) if info else None,
+                "equity": safe_float(info.get("equity")) if info else None,
+                "profit": safe_float(info.get("profit")) if info else None,
                 "tick": {
                     "symbol": md.get("symbol") if md else None,
-                    "bid": float(md.get("bid")) if md else None,
-                    "ask": float(md.get("ask")) if md else None,
+                    "bid": safe_float(md.get("bid")) if md and md.get("bid") is not None else None,
+                    "ask": safe_float(md.get("ask")) if md and md.get("ask") is not None else None,
                     "time": (md.get("time").isoformat() if hasattr(md.get("time"), 'isoformat') else None) if md else None
                 },
                 "timestamp": datetime.utcnow().isoformat()
