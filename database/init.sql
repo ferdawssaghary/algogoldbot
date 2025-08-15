@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS mt5_accounts (
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     account_login VARCHAR(20) NOT NULL,
     account_password VARCHAR(255) NOT NULL, -- Encrypted
-    server_name VARCHAR(100) DEFAULT 'LiteFinance-Demo',
+    server_name VARCHAR(100) DEFAULT 'LiteFinance-MT5-Demo',
     account_type VARCHAR(20) DEFAULT 'demo',
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

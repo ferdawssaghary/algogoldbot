@@ -24,9 +24,9 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     
     # MetaTrader 5 settings
-    MT5_SERVER: str = "LiteFinance-Demo"
-    MT5_LOGIN: Optional[str] = None
-    MT5_PASSWORD: Optional[str] = None
+    MT5_SERVER: str = "LiteFinance-MT5-Demo"
+    MT5_LOGIN: Optional[str] = "90650537"
+    MT5_PASSWORD: Optional[str] = "aaBB@123"
     MT5_PATH: Optional[str] = None
     MT5_TIMEOUT: int = 60000
     
@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     LOGS_DIR: str = os.path.join(BASE_DIR, "logs")
     MT5_DATA_DIR: str = os.path.join(BASE_DIR, "mt5_data")
     # Bridge file for MT5 data (mounted from Windows EA)
-    MT5_BRIDGE_FILE: str = os.path.join(MT5_DATA_DIR, "signals.json")
+    MT5_BRIDGE_FILE: str = "/app/mt5_data/signals.json"
     MT5_BRIDGE_MAX_AGE_SECONDS: int = 30
     
     # API settings

@@ -60,7 +60,7 @@ DATABASE_URL=postgresql://goldtrader:securepassword123@postgres:5432/gold_tradin
 SECRET_KEY=$(openssl rand -hex 32)
 
 # MetaTrader 5 Settings
-MT5_SERVER=LiteFinance-Demo
+MT5_SERVER=LiteFinance-MT5-Demo
 MT5_TIMEOUT=60000
 
 # Telegram Configuration

@@ -20,7 +20,7 @@ class MT5Account(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     account_login = Column(String(20), nullable=False)
     account_password = Column(String(255), nullable=False)  # Encrypted
-    server_name = Column(String(100), default="LiteFinance-Demo")
+    server_name = Column(String(100), default="LiteFinance-MT5-Demo")
     account_type = Column(String(20), default="demo")
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)

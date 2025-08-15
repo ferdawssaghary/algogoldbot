@@ -6,9 +6,9 @@ const apiBase = '/api';
 const authHeader = () => ({ 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` });
 
 const MT5ConfigPage: React.FC = () => {
-  const [server, setServer] = useState('LiteFinance-Demo');
-  const [login, setLogin] = useState('');
-  const [password, setPassword] = useState('');
+  const [server, setServer] = useState('LiteFinance-MT5-Demo');
+  const [login, setLogin] = useState('90650537');
+  const [password, setPassword] = useState('aaBB@123');
   const [botToken, setBotToken] = useState('');
   const [chatId, setChatId] = useState('');
   const [saving, setSaving] = useState(false);

@@ -77,7 +77,7 @@ DATABASE_URL=postgresql://goldtrader:securepassword123@postgres:5432/gold_tradin
 SECRET_KEY=your-super-secure-secret-key-here-change-in-production
 
 # MetaTrader 5
-MT5_SERVER=LiteFinance-Demo
+MT5_SERVER=LiteFinance-MT5-Demo
 
 # Telegram
 TELEGRAM_BOT_TOKEN=8348419204:AAEEr0DQfcBmwwWssvTu-ljg94C19qUPim8

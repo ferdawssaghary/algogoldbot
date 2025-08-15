@@ -16,7 +16,7 @@ router = APIRouter()
 class MT5ConfigIn(BaseModel):
     account_login: str
     account_password: str
-    server_name: str = "LiteFinance-Demo"
+    server_name: str = "LiteFinance-MT5-Demo"
 
 @router.get("/config")
 async def get_mt5_config(
@@ -32,7 +32,7 @@ async def get_mt5_config(
     account_info = await mt5_service.get_account_info() if mt5_service and is_connected else None
     return {
         "user_id": current_user.id,
-        "server": acc.server_name if acc else "LiteFinance-Demo",
+        "server": acc.server_name if acc else "LiteFinance-MT5-Demo",
         "account_login": acc.account_login if acc else "",
         "is_connected": is_connected,
         "account_info": account_info

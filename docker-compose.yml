@@ -26,16 +26,17 @@ services:
     container_name: gold_trading_backend
     environment:
       - DATABASE_URL=postgresql://goldtrader:securepassword123@postgres:5432/gold_trading_bot
-      - MT5_SERVER=LiteFinance-Demo
+      - MT5_SERVER=LiteFinance-MT5-Demo
       - TELEGRAM_BOT_TOKEN=8348419204:AAEEr0DQfcBmwwWssvTu-ljg94C19qUPim8
       - TELEGRAM_CHAT_ID=-1002481438774
-      - SECRET_KEY=your-super-secure-secret-key-here
+      - SECRET_KEY=g4dV6pG9qW2z8K1rY7tB3nM5xC0hL2sD
     ports:
       - "8000:8000"
     depends_on:
       - postgres
     volumes:
       - mt5_data:/app/mt5_data
+      - /mnt/c/c/MT5Bridge:/app/mt5_data
     restart: unless-stopped
     networks:
       - trading_network

@@ -21,7 +21,7 @@ MT5_SERVER=your_mt5_server_here
 # Example for LiteFinance:
 # MT5_LOGIN=12345678
 # MT5_PASSWORD=your_password
-# MT5_SERVER=LiteFinance-Demo
+# MT5_SERVER=LiteFinance-MT5-Demo
 ```
 
 ### Option B: Using Docker Environment Variables
@@ -110,7 +110,7 @@ docker-compose up -d
 
 ## Common MT5 Server Names
 
-- **LiteFinance**: `LiteFinance-Demo` (demo) or `LiteFinance-Live` (live)
+- **LiteFinance**: `LiteFinance-MT5-Demo` (demo) or `LiteFinance-Live` (live)
 - **IC Markets**: `ICMarkets-Demo` or `ICMarkets-Live`
 - **Pepperstone**: `Pepperstone-Demo` or `Pepperstone-Live`
 - **FXTM**: `FXTM-Demo` or `FXTM-Live`
