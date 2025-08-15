@@ -60,6 +60,9 @@ class Settings(BaseSettings):
     BASE_DIR: str = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     LOGS_DIR: str = os.path.join(BASE_DIR, "logs")
     MT5_DATA_DIR: str = os.path.join(BASE_DIR, "mt5_data")
+    # Bridge file for MT5 data (mounted from Windows EA)
+    MT5_BRIDGE_FILE: str = os.path.join(MT5_DATA_DIR, "signals.json")
+    MT5_BRIDGE_MAX_AGE_SECONDS: int = 30
     
     # API settings
     API_V1_STR: str = "/api"

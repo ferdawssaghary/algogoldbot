@@ -1,228 +1,246 @@
-"""MetaTrader 5 integration service
+"""MetaTrader 5 integration service (bridge-based)
 
-Note: The MetaTrader5 Python package is not available on PyPI and requires
-the MetaTrader 5 terminal to be installed on the system. For production use,
-you need to:
+This service runs inside Docker/WSL and cannot access native MetaTrader5 APIs.
+Instead, it integrates via a bridge file written by an MT5 EA on Windows.
 
-1. Install MetaTrader 5 terminal on your system
-2. Download the MetaTrader5 Python package from the official MetaQuotes website
-3. Install it manually: pip install MetaTrader5-5.0.45.0.tar.gz
-
-For development and testing, this service runs in mock mode when the package
-is not available.
+- Bridge file path (mounted): /app/mt5_data/signals.json
+- MT5 is considered initialized/active only if the file exists, is fresh (modified
+  within MT5_BRIDGE_MAX_AGE_SECONDS), and contains valid JSON.
 """
 
 from typing import Optional, Dict, List, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+import os
+import json
+import uuid
 import pandas as pd
 
 from app.core.config import settings
-from app.core.security import decrypt_sensitive_data
 from app.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 
-# Try to import MetaTrader5, fallback to None if not available
-try:
-    import MetaTrader5 as mt5
-    MT5_AVAILABLE = True
-    logger.info("MetaTrader5 package loaded successfully")
-except ImportError:
-    mt5 = None
-    MT5_AVAILABLE = False
-    logger.warning("MetaTrader5 package not available. Running in mock mode.")
 
 class MT5Service:
-    """MetaTrader 5 integration service"""
+    """MetaTrader 5 integration service via bridge file"""
     
     def __init__(self):
         self.is_initialized = False
-        self.current_account = None
+        self.current_account: Optional[Dict[str, Any]] = None
         self.connection_attempts = 0
         self.max_connection_attempts = 3
-        
-    async def initialize(self) -> bool:
-        """Initialize MT5 connection"""
-        if not MT5_AVAILABLE:
-            logger.warning("MT5 not available, running in mock mode")
-            self.is_initialized = True
-            return True
-            
+        self.bridge_file_path: str = settings.MT5_BRIDGE_FILE
+        self.bridge_max_age: int = int(getattr(settings, "MT5_BRIDGE_MAX_AGE_SECONDS", 30))
+        self._ea_instruction_queue: Optional[List[Dict[str, Any]]] = None
+    
+    def set_instruction_queue(self, queue: List[Dict[str, Any]]) -> None:
+        """Provide a shared EA instruction queue (e.g., app.state.ea_instruction_queue)."""
+        self._ea_instruction_queue = queue
+        logger.info("MT5Service instruction queue set")
+
+    def _file_is_fresh(self, path: str) -> bool:
         try:
-            if not mt5.initialize():
-                logger.error(f"MT5 initialize() failed, error code: {mt5.last_error()}")
-                return False
-            
-            self.is_initialized = True
-            logger.info("MT5 initialized successfully")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error initializing MT5: {e}")
+            stat = os.stat(path)
+            mtime = stat.st_mtime
+            age = datetime.now(timezone.utc).timestamp() - mtime
+            return age <= self.bridge_max_age
+        except FileNotFoundError:
             return False
+        except Exception as e:
+            logger.error(f"Error checking bridge file freshness: {e}")
+            return False
+
+    def _load_bridge_data(self, require_fresh: bool = True) -> Optional[Dict[str, Any]]:
+        """Load and parse bridge JSON if present (and fresh if required)."""
+        try:
+            if not os.path.exists(self.bridge_file_path):
+                logger.debug(f"Bridge file not found at {self.bridge_file_path}")
+                return None
+            if require_fresh and not self._file_is_fresh(self.bridge_file_path):
+                logger.warning("Bridge file is stale; MT5 considered not ready")
+                return None
+            with open(self.bridge_file_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if not isinstance(data, dict):
+                logger.error("Bridge file JSON is not an object")
+                return None
+            return data
+        except json.JSONDecodeError as je:
+            logger.error(f"Invalid JSON in bridge file: {je}")
+            return None
+        except Exception as e:
+            logger.error(f"Failed to read bridge file: {e}")
+            return None
+    
+    async def initialize(self) -> bool:
+        """Initialize by validating the bridge file."""
+        data = self._load_bridge_data(require_fresh=True)
+        if data is None:
+            self.is_initialized = False
+            return False
+        self.is_initialized = True
+        # Optionally set current account snapshot
+        acct = data.get("account") if isinstance(data, dict) else None
+        if isinstance(acct, dict):
+            self.current_account = {
+                'login': acct.get('login'),
+                'server': acct.get('server'),
+                'name': acct.get('name'),
+                'balance': acct.get('balance'),
+                'equity': acct.get('equity'),
+                'margin': acct.get('margin'),
+                'free_margin': acct.get('free_margin'),
+                'margin_level': acct.get('margin_level'),
+                'currency': acct.get('currency')
+            }
+        logger.info("MT5 bridge initialized via signals.json")
+        return True
     
     async def connect_account(self, login: str, password: str, server: str) -> bool:
-        """Connect to MT5 account"""
-        try:
-            if not self.is_initialized:
-                await self.initialize()
-            
-            if not MT5_AVAILABLE:
-                logger.error("MetaTrader5 package not available. Cannot connect to real MT5 account.")
-                logger.error("Please install MetaTrader5 package for production use.")
-                return False
-            
-            # Decrypt password
-            decrypted_password = decrypt_sensitive_data(password)
-            
-            # Attempt connection
-            authorized = mt5.login(int(login), decrypted_password, server)
-            
-            if authorized:
-                account_info = mt5.account_info()
-                if account_info is None:
-                    logger.error("Failed to get account info")
-                    return False
-                
-                self.current_account = {
-                    'login': login,
-                    'server': server,
-                    'name': account_info.name,
-                    'balance': account_info.balance,
-                    'equity': account_info.equity,
-                    'margin': account_info.margin,
-                    'free_margin': account_info.margin_free,
-                    'margin_level': account_info.margin_level,
-                    'currency': account_info.currency
-                }
-                
-                self.connection_attempts = 0
-                logger.info(f"Successfully connected to MT5 account: {login}")
-                return True
-            else:
-                error_code = mt5.last_error()
-                logger.error(f"Failed to connect to account {login}, error: {error_code}")
-                return False
-                
-        except Exception as e:
-            logger.error(f"Error connecting to MT5 account: {e}")
+        """Compatibility method: validates bridge readiness and captures account snapshot.
+        Credentials are ignored because native MT5 login is not available in WSL.
+        """
+        if not self.is_initialized:
+            await self.initialize()
+        data = self._load_bridge_data(require_fresh=True)
+        if data is None:
+            logger.error("Bridge not ready; cannot connect account")
             return False
+        acct = data.get("account") if isinstance(data, dict) else None
+        if isinstance(acct, dict):
+            self.current_account = {
+                'login': acct.get('login') or login,
+                'server': acct.get('server') or server,
+                'name': acct.get('name'),
+                'balance': acct.get('balance'),
+                'equity': acct.get('equity'),
+                'margin': acct.get('margin'),
+                'free_margin': acct.get('free_margin'),
+                'margin_level': acct.get('margin_level'),
+                'currency': acct.get('currency')
+            }
+        logger.info("MT5 account connected via bridge")
+        return True
     
     async def disconnect(self) -> None:
-        """Disconnect from MT5"""
         try:
-            if self.is_initialized:
-                if MT5_AVAILABLE:
-                    mt5.shutdown()
-                self.is_initialized = False
-                self.current_account = None
-                logger.info("MT5 disconnected successfully")
+            self.is_initialized = False
+            self.current_account = None
+            logger.info("MT5 disconnected (bridge mode)")
         except Exception as e:
-            logger.error(f"Error disconnecting from MT5: {e}")
+            logger.error(f"Error disconnecting MT5 (bridge): {e}")
     
     def is_connected(self) -> bool:
-        """Check if MT5 is connected"""
         if not self.is_initialized:
             return False
-        
-        if not MT5_AVAILABLE:
-            logger.error("MetaTrader5 package not available. Cannot check connection.")
-            return False
-        
-        account_info = mt5.account_info()
-        return account_info is not None
+        return self._load_bridge_data(require_fresh=True) is not None
     
     async def get_account_info(self) -> Optional[Dict[str, Any]]:
-        """Get current account information"""
         try:
             if not self.is_connected():
                 return None
-            
-            if not MT5_AVAILABLE:
-                logger.error("MetaTrader5 package not available. Cannot get real account info.")
+            data = self._load_bridge_data(require_fresh=True)
+            if not data:
                 return None
-            
-            account_info = mt5.account_info()
-            if account_info is None:
+            acct = data.get("account") if isinstance(data, dict) else None
+            if not isinstance(acct, dict):
                 return None
-            
             return {
-                'login': account_info.login,
-                'balance': account_info.balance,
-                'equity': account_info.equity,
-                'margin': account_info.margin,
-                'free_margin': account_info.margin_free,
-                'margin_level': account_info.margin_level,
-                'profit': account_info.profit,
-                'currency': account_info.currency,
-                'leverage': account_info.leverage,
+                'login': acct.get('login'),
+                'balance': acct.get('balance'),
+                'equity': acct.get('equity'),
+                'margin': acct.get('margin'),
+                'free_margin': acct.get('free_margin'),
+                'margin_level': acct.get('margin_level'),
+                'profit': acct.get('profit'),
+                'currency': acct.get('currency'),
+                'leverage': acct.get('leverage'),
                 'timestamp': datetime.now()
             }
-            
         except Exception as e:
-            logger.error(f"Error getting account info: {e}")
+            logger.error(f"Error getting account info (bridge): {e}")
             return None
     
     async def get_symbol_info(self, symbol: str = "XAUUSD") -> Optional[Dict[str, Any]]:
-        """Get symbol information"""
         try:
             if not self.is_connected():
                 return None
-            
-            if not MT5_AVAILABLE:
-                logger.error("MetaTrader5 package not available. Cannot get real symbol info.")
+            data = self._load_bridge_data(require_fresh=True)
+            if not data:
                 return None
-            
-            symbol_info = mt5.symbol_info(symbol)
-            if symbol_info is None:
-                return None
-            
+            # Try symbols map first
+            symbols = data.get("symbols") if isinstance(data, dict) else None
+            sym_info = None
+            if isinstance(symbols, dict):
+                sym_info = symbols.get(symbol)
+            # Fallback to generic fields or defaults
+            point = None
+            digits = None
+            tick_value = None
+            lot_step = None
+            if isinstance(sym_info, dict):
+                point = sym_info.get("point")
+                digits = sym_info.get("digits")
+                tick_value = sym_info.get("tick_value") or sym_info.get("trade_tick_value")
+                lot_step = sym_info.get("lot_step") or sym_info.get("volume_step")
+            if point is None and isinstance(digits, (int, float)):
+                try:
+                    point = 10 ** (-int(digits))
+                except Exception:
+                    point = None
             return {
                 'symbol': symbol,
-                'bid': symbol_info.bid,
-                'ask': symbol_info.ask,
-                'spread': symbol_info.spread,
-                'point': symbol_info.point,
-                'digits': symbol_info.digits,
-                'trade_mode': symbol_info.trade_mode,
-                'min_lot': symbol_info.volume_min,
-                'max_lot': symbol_info.volume_max,
-                'lot_step': symbol_info.volume_step,
-                'tick_value': getattr(symbol_info, 'trade_tick_value', None),
-                'contract_size': getattr(symbol_info, 'trade_contract_size', None),
+                'bid': (data.get('tick') or {}).get('bid'),
+                'ask': (data.get('tick') or {}).get('ask'),
+                'spread': None,
+                'point': point if point is not None else 0.01,
+                'digits': digits if digits is not None else 2,
+                'trade_mode': (sym_info or {}).get('trade_mode') if isinstance(sym_info, dict) else None,
+                'min_lot': (sym_info or {}).get('volume_min') if isinstance(sym_info, dict) else None,
+                'max_lot': (sym_info or {}).get('volume_max') if isinstance(sym_info, dict) else None,
+                'lot_step': lot_step if lot_step is not None else 0.01,
+                'tick_value': tick_value if tick_value is not None else 1.0,
+                'contract_size': (sym_info or {}).get('trade_contract_size') if isinstance(sym_info, dict) else None,
                 'timestamp': datetime.now()
             }
-            
         except Exception as e:
-            logger.error(f"Error getting symbol info for {symbol}: {e}")
+            logger.error(f"Error getting symbol info for {symbol} (bridge): {e}")
             return None
     
     async def get_market_data(self, symbol: str = "XAUUSD") -> Optional[Dict[str, Any]]:
-        """Get current market data"""
         try:
             if not self.is_connected():
                 return None
-            
-            if not MT5_AVAILABLE:
-                logger.error("MetaTrader5 package not available. Cannot get real market data.")
+            data = self._load_bridge_data(require_fresh=True)
+            if not data:
                 return None
-            
-            tick = mt5.symbol_info_tick(symbol)
-            if tick is None:
+            tick = data.get("tick") if isinstance(data, dict) else None
+            if not isinstance(tick, dict):
                 return None
-            
+            # Convert time if numeric/str
+            tval = tick.get("time")
+            tdt = None
+            try:
+                if isinstance(tval, (int, float)):
+                    tdt = datetime.fromtimestamp(float(tval))
+                elif isinstance(tval, str):
+                    tdt = datetime.fromisoformat(tval.replace("Z", "+00:00"))
+            except Exception:
+                tdt = None
+            bid = tick.get("bid")
+            ask = tick.get("ask")
+            spread = (ask - bid) if isinstance(bid, (int, float)) and isinstance(ask, (int, float)) else None
             return {
-                'symbol': symbol,
-                'bid': tick.bid,
-                'ask': tick.ask,
-                'spread': tick.ask - tick.bid,
-                'volume': tick.volume,
-                'time': datetime.fromtimestamp(tick.time),
+                'symbol': tick.get('symbol') or symbol,
+                'bid': bid,
+                'ask': ask,
+                'spread': spread,
+                'volume': tick.get('volume'),
+                'time': tdt,
                 'timestamp': datetime.now()
             }
-            
         except Exception as e:
-            logger.error(f"Error getting market data for {symbol}: {e}")
+            logger.error(f"Error getting market data for {symbol} (bridge): {e}")
             return None
     
     async def place_order(
@@ -235,168 +253,90 @@ class MT5Service:
         take_profit: Optional[float] = None,
         comment: str = "Gold Trading Bot"
     ) -> Optional[Dict[str, Any]]:
-        """Place a trading order"""
+        """Enqueue an order instruction for the EA to execute on MT5."""
         try:
             if not self.is_connected():
-                logger.error("Not connected to MT5")
+                logger.error("Not connected to MT5 (bridge not ready)")
                 return None
-            
-            if not MT5_AVAILABLE:
-                logger.error("MetaTrader5 package not available. Cannot place real orders.")
+            if self._ea_instruction_queue is None:
+                logger.error("EA instruction queue not set; cannot enqueue order")
                 return None
-            
-            # Prepare order request
-            order_type_mapping = {
-                'BUY': mt5.ORDER_TYPE_BUY,
-                'SELL': mt5.ORDER_TYPE_SELL,
-                'BUY_LIMIT': mt5.ORDER_TYPE_BUY_LIMIT,
-                'SELL_LIMIT': mt5.ORDER_TYPE_SELL_LIMIT,
-                'BUY_STOP': mt5.ORDER_TYPE_BUY_STOP,
-                'SELL_STOP': mt5.ORDER_TYPE_SELL_STOP
-            }
-            
-            if order_type not in order_type_mapping:
+            if order_type not in {"BUY", "SELL", "BUY_LIMIT", "SELL_LIMIT", "BUY_STOP", "SELL_STOP"}:
                 logger.error(f"Invalid order type: {order_type}")
                 return None
-            
-            # Get current price if not provided
-            if price is None:
-                tick = mt5.symbol_info_tick(symbol)
-                if tick is None:
-                    logger.error(f"Failed to get current price for {symbol}")
-                    return None
-                price = tick.ask if order_type == 'BUY' else tick.bid
-            
-            request = {
-                "action": mt5.TRADE_ACTION_DEAL,
+            instruction_id = str(uuid.uuid4())
+            item = {
+                "id": instruction_id,
+                "action": "order",
                 "symbol": symbol,
-                "volume": lot_size,
-                "type": order_type_mapping[order_type],
-                "price": price,
-                "deviation": settings.MT5_TIMEOUT,
-                "magic": 12345,  # Magic number for identification
+                "side": order_type,
+                "lot": float(lot_size),
+                "price": float(price) if isinstance(price, (int, float)) else None,
+                "sl": float(stop_loss) if isinstance(stop_loss, (int, float)) else None,
+                "tp": float(take_profit) if isinstance(take_profit, (int, float)) else None,
                 "comment": comment,
-                "type_time": mt5.ORDER_TIME_GTC,
-                "type_filling": mt5.ORDER_FILLING_IOC,
+                "timestamp": datetime.utcnow().isoformat()
             }
-            
-            # Add stop loss and take profit if provided
-            if stop_loss is not None:
-                request["sl"] = stop_loss
-            if take_profit is not None:
-                request["tp"] = take_profit
-            
-            # Send order
-            result = mt5.order_send(request)
-            
-            if result is None:
-                logger.error("Order send failed, result is None")
-                return None
-            
-            if result.retcode != mt5.TRADE_RETCODE_DONE:
-                logger.error(f"Order failed, retcode: {result.retcode}, comment: {result.comment}")
-                return None
-            
-            logger.info(f"Order placed successfully: {order_type} {lot_size} {symbol} at {price}")
-            
-            return {
-                'ticket': result.order,
-                'symbol': symbol,
-                'order_type': order_type,
-                'lot_size': lot_size,
-                'price': price,
-                'stop_loss': stop_loss,
-                'take_profit': take_profit,
-                'comment': comment,
-                'retcode': result.retcode,
-                'timestamp': datetime.now()
-            }
-            
+            self._ea_instruction_queue.append(item)
+            logger.info(f"Enqueued EA instruction {instruction_id}: {order_type} {symbol} {lot_size}")
+            return {"success": True, "instruction_id": instruction_id, "enqueued": item}
         except Exception as e:
-            logger.error(f"Error placing order: {e}")
+            logger.error(f"Error enqueuing order (bridge): {e}")
             return None
     
     async def close_position(self, ticket: int) -> bool:
-        """Close an open position"""
         try:
             if not self.is_connected():
                 return False
-            
-            if not MT5_AVAILABLE:
-                logger.error("MetaTrader5 package not available. Cannot close real positions.")
+            if self._ea_instruction_queue is None:
+                logger.error("EA instruction queue not set; cannot enqueue close")
                 return False
-            
-            # Get position info
-            position = mt5.positions_get(ticket=ticket)
-            if not position:
-                logger.error(f"Position {ticket} not found")
-                return False
-            
-            position = position[0]
-            
-            # Prepare close request
-            close_type = mt5.ORDER_TYPE_SELL if position.type == mt5.POSITION_TYPE_BUY else mt5.ORDER_TYPE_BUY
-            
-            request = {
-                "action": mt5.TRADE_ACTION_DEAL,
-                "symbol": position.symbol,
-                "volume": position.volume,
-                "type": close_type,
-                "position": ticket,
-                "deviation": settings.MT5_TIMEOUT,
-                "magic": 12345,
-                "comment": "Gold Trading Bot - Close",
-                "type_time": mt5.ORDER_TIME_GTC,
-                "type_filling": mt5.ORDER_FILLING_IOC,
+            instruction_id = str(uuid.uuid4())
+            item = {
+                "id": instruction_id,
+                "action": "close",
+                "ticket": int(ticket),
+                "timestamp": datetime.utcnow().isoformat()
             }
-            
-            result = mt5.order_send(request)
-            
-            if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
-                logger.error(f"Failed to close position {ticket}")
-                return False
-            
-            logger.info(f"Position {ticket} closed successfully")
+            self._ea_instruction_queue.append(item)
+            logger.info(f"Enqueued EA close instruction for ticket {ticket}")
             return True
-            
         except Exception as e:
-            logger.error(f"Error closing position {ticket}: {e}")
+            logger.error(f"Error enqueuing close position (bridge): {e}")
             return False
     
     async def get_open_positions(self, symbol: str = "XAUUSD") -> List[Dict[str, Any]]:
-        """Get all open positions for a symbol"""
         try:
             if not self.is_connected():
                 return []
-            
-            if not MT5_AVAILABLE:
-                logger.error("MetaTrader5 package not available. Cannot get real positions.")
+            data = self._load_bridge_data(require_fresh=True)
+            if not data:
                 return []
-            
-            positions = mt5.positions_get(symbol=symbol)
-            if positions is None:
+            positions = data.get("positions") if isinstance(data, dict) else None
+            if not isinstance(positions, list):
                 return []
-            
-            result = []
-            for position in positions:
+            result: List[Dict[str, Any]] = []
+            for p in positions:
+                if not isinstance(p, dict):
+                    continue
+                if symbol and p.get("symbol") != symbol:
+                    continue
                 result.append({
-                    'ticket': position.ticket,
-                    'symbol': position.symbol,
-                    'type': 'BUY' if position.type == mt5.POSITION_TYPE_BUY else 'SELL',
-                    'volume': position.volume,
-                    'price_open': position.price_open,
-                    'price_current': position.price_current,
-                    'profit': position.profit,
-                    'swap': position.swap,
-                    'commission': position.commission,
-                    'time': datetime.fromtimestamp(position.time),
-                    'comment': position.comment
+                    'ticket': p.get('ticket'),
+                    'symbol': p.get('symbol'),
+                    'type': p.get('type'),
+                    'volume': p.get('volume'),
+                    'price_open': p.get('price_open') or p.get('open_price'),
+                    'price_current': p.get('price_current') or p.get('current_price'),
+                    'profit': p.get('profit'),
+                    'swap': p.get('swap'),
+                    'commission': p.get('commission'),
+                    'time': datetime.fromisoformat(p['time']) if isinstance(p.get('time'), str) else None,
+                    'comment': p.get('comment')
                 })
-            
             return result
-            
         except Exception as e:
-            logger.error(f"Error getting open positions: {e}")
+            logger.error(f"Error getting open positions (bridge): {e}")
             return []
     
     async def get_trade_history(
@@ -405,61 +345,47 @@ class MT5Service:
         date_from: datetime = None,
         date_to: datetime = None
     ) -> List[Dict[str, Any]]:
-        """Get trade history"""
         try:
             if not self.is_connected():
                 return []
-            
-            if not MT5_AVAILABLE:
-                logger.error("MetaTrader5 package not available. Cannot get real trade history.")
+            data = self._load_bridge_data(require_fresh=True)
+            if not data:
                 return []
-            
-            if date_from is None:
-                date_from = datetime.now() - timedelta(days=30)
-            if date_to is None:
-                date_to = datetime.now()
-            
-            deals = mt5.history_deals_get(date_from, date_to, group=symbol)
-            if deals is None:
+            deals = data.get("deals") or data.get("history_deals")
+            if not isinstance(deals, list):
                 return []
-            
-            result = []
-            for deal in deals:
-                entry_val = getattr(deal, 'entry', None)
-                entry = None
+            result: List[Dict[str, Any]] = []
+            for d in deals:
+                if not isinstance(d, dict):
+                    continue
+                if symbol and d.get("symbol") != symbol:
+                    continue
+                tval = d.get('time')
+                tdt = None
                 try:
-                    # Map numeric to name if available on MT5 module
-                    if entry_val is not None and hasattr(mt5, 'DEAL_ENTRY_IN'):
-                        entry_names = {
-                            getattr(mt5, 'DEAL_ENTRY_IN', -1): 'IN',
-                            getattr(mt5, 'DEAL_ENTRY_OUT', -2): 'OUT',
-                            getattr(mt5, 'DEAL_ENTRY_INOUT', -3): 'INOUT',
-                            getattr(mt5, 'DEAL_ENTRY_OUT_BY', -4): 'OUT_BY',
-                        }
-                        entry = entry_names.get(entry_val, str(entry_val))
-                    else:
-                        entry = str(entry_val) if entry_val is not None else None
+                    if isinstance(tval, (int, float)):
+                        tdt = datetime.fromtimestamp(float(tval))
+                    elif isinstance(tval, str):
+                        tdt = datetime.fromisoformat(tval.replace("Z", "+00:00"))
                 except Exception:
-                    entry = str(entry_val) if entry_val is not None else None
+                    tdt = None
                 result.append({
-                    'ticket': deal.ticket,
-                    'order': deal.order,
-                    'symbol': deal.symbol,
-                    'type': 'BUY' if deal.type == mt5.DEAL_TYPE_BUY else 'SELL',
-                    'volume': deal.volume,
-                    'price': deal.price,
-                    'profit': deal.profit,
-                    'commission': deal.commission,
-                    'swap': deal.swap,
-                    'time': datetime.fromtimestamp(deal.time),
-                    'comment': deal.comment,
-                    'entry': entry
+                    'ticket': d.get('ticket'),
+                    'order': d.get('order'),
+                    'symbol': d.get('symbol'),
+                    'type': d.get('type'),
+                    'volume': d.get('volume'),
+                    'price': d.get('price'),
+                    'profit': d.get('profit'),
+                    'commission': d.get('commission'),
+                    'swap': d.get('swap'),
+                    'time': tdt,
+                    'comment': d.get('comment'),
+                    'entry': d.get('entry')
                 })
-            
             return result
-            
         except Exception as e:
-            logger.error(f"Error getting trade history: {e}")
+            logger.error(f"Error getting trade history (bridge): {e}")
             return []
     
     async def get_price_data(
@@ -468,79 +394,94 @@ class MT5Service:
         timeframe: str = "H1",
         count: int = 100
     ) -> Optional[pd.DataFrame]:
-        """Get historical price data"""
         try:
             if not self.is_connected():
                 return None
-            
-            if not MT5_AVAILABLE:
-                logger.error("MetaTrader5 package not available. Cannot get real price data.")
+            data = self._load_bridge_data(require_fresh=True)
+            if not data:
                 return None
-            
-            timeframe_mapping = {
-                'M1': mt5.TIMEFRAME_M1,
-                'M5': mt5.TIMEFRAME_M5,
-                'M15': mt5.TIMEFRAME_M15,
-                'M30': mt5.TIMEFRAME_M30,
-                'H1': mt5.TIMEFRAME_H1,
-                'H4': mt5.TIMEFRAME_H4,
-                'D1': mt5.TIMEFRAME_D1,
-                'W1': mt5.TIMEFRAME_W1,
-                'MN1': mt5.TIMEFRAME_MN1
-            }
-            
-            if timeframe not in timeframe_mapping:
-                logger.error(f"Invalid timeframe: {timeframe}")
+            series = None
+            # Try timeframe-specific candles
+            if isinstance(data.get('candles'), dict):
+                series = data['candles'].get(timeframe)
+            # Fallback to generic rates/bars arrays
+            if series is None:
+                series = data.get('rates') or data.get('bars') or data.get('ohlc')
+            if not isinstance(series, list):
                 return None
-            
-            rates = mt5.copy_rates_from_pos(symbol, timeframe_mapping[timeframe], 0, count)
-            
-            if rates is None:
-                logger.error(f"Failed to get price data for {symbol}")
+            rows: List[Dict[str, Any]] = []
+            for r in series[-count:]:
+                if not isinstance(r, dict):
+                    continue
+                tval = r.get('time')
+                try:
+                    if isinstance(tval, (int, float)):
+                        t = datetime.fromtimestamp(float(tval))
+                    elif isinstance(tval, str):
+                        t = datetime.fromisoformat(tval.replace("Z", "+00:00"))
+                    else:
+                        continue
+                except Exception:
+                    continue
+                rows.append({
+                    'time': t,
+                    'open': r.get('open'),
+                    'high': r.get('high'),
+                    'low': r.get('low'),
+                    'close': r.get('close'),
+                    'tick_volume': r.get('tick_volume') or r.get('tickVolume') or r.get('volume'),
+                    'real_volume': r.get('real_volume') or r.get('realVolume')
+                })
+            if not rows:
                 return None
-            
-            df = pd.DataFrame(rates)
-            df['time'] = pd.to_datetime(df['time'], unit='s')
+            df = pd.DataFrame(rows)
             df.set_index('time', inplace=True)
-            
             return df
-            
         except Exception as e:
-            logger.error(f"Error getting price data: {e}")
+            logger.error(f"Error getting price data (bridge): {e}")
             return None
 
     async def get_orders_history(self, date_from: datetime = None, date_to: datetime = None) -> List[Dict[str, Any]]:
-        """Get orders history for robust correlation (if MT5 available)"""
         try:
             if not self.is_connected():
                 return []
-            if not MT5_AVAILABLE:
+            data = self._load_bridge_data(require_fresh=True)
+            if not data:
                 return []
-            if date_from is None:
-                date_from = datetime.now() - timedelta(days=30)
-            if date_to is None:
-                date_to = datetime.now()
-            orders = mt5.history_orders_get(date_from, date_to)
-            if orders is None:
+            orders = data.get('orders') or data.get('history_orders')
+            if not isinstance(orders, list):
                 return []
-            res = []
+            res: List[Dict[str, Any]] = []
             for o in orders:
+                if not isinstance(o, dict):
+                    continue
+                t_setup = o.get('time_setup') or o.get('timeSetup')
+                t_done = o.get('time_done') or o.get('timeDone')
+                def _parse_time(v):
+                    try:
+                        if isinstance(v, (int, float)):
+                            return datetime.fromtimestamp(float(v))
+                        if isinstance(v, str):
+                            return datetime.fromisoformat(v.replace("Z", "+00:00"))
+                    except Exception:
+                        return None
+                    return None
                 res.append({
-                    'ticket': o.ticket,
-                    'symbol': o.symbol,
-                    'type': o.type,
-                    'volume_initial': o.volume_initial,
-                    'volume_current': o.volume_current,
-                    'price_open': o.price_open,
-                    'sl': o.sl,
-                    'tp': o.tp,
-                    'time_setup': datetime.fromtimestamp(o.time_setup),
-                    'time_done': datetime.fromtimestamp(o.time_done) if o.time_done else None,
-                    'reason': o.reason,
-                    'state': o.state,
-                    'comment': o.comment,
+                    'ticket': o.get('ticket'),
+                    'symbol': o.get('symbol'),
+                    'type': o.get('type'),
+                    'volume_initial': o.get('volume_initial') or o.get('volumeInitial'),
+                    'volume_current': o.get('volume_current') or o.get('volumeCurrent'),
+                    'price_open': o.get('price_open'),
+                    'sl': o.get('sl'),
+                    'tp': o.get('tp'),
+                    'time_setup': _parse_time(t_setup),
+                    'time_done': _parse_time(t_done),
+                    'reason': o.get('reason'),
+                    'state': o.get('state'),
+                    'comment': o.get('comment'),
                 })
             return res
         except Exception as e:
-            logger.error(f"Error getting orders history: {e}")
+            logger.error(f"Error getting orders history (bridge): {e}")
             return []

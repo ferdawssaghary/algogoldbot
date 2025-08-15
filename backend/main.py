@@ -53,20 +53,20 @@ async def lifespan(app: FastAPI):
         # Initialize services
         mt5_service = MT5Service()
         
-        # Auto-connect to MT5 if credentials are configured
+        # Initialize bridge-based MT5 service
+        await mt5_service.initialize()
+        if mt5_service.is_connected():
+            logger.info("MT5 bridge is active (signals.json is fresh)")
+        else:
+            logger.warning("MT5 bridge not ready. Ensure signals.json is being updated by the EA.")
+        
+        # Optional: compatibility connection using env vars (no-op in bridge mode)
         if settings.MT5_LOGIN and settings.MT5_PASSWORD:
-            logger.info(f"Attempting to connect to MT5 account: {settings.MT5_LOGIN}")
-            connection_success = await mt5_service.connect_account(
+            await mt5_service.connect_account(
                 login=settings.MT5_LOGIN,
                 password=settings.MT5_PASSWORD,
                 server=settings.MT5_SERVER
             )
-            if connection_success:
-                logger.info("Successfully connected to MT5 account")
-            else:
-                logger.error("Failed to connect to MT5 account. Trading functionality will be limited.")
-        else:
-            logger.warning("No MT5 credentials configured. Please configure MT5 credentials for full functionality.")
         
         telegram_service = TelegramService(mt5_service)
         trading_engine = TradingEngine(mt5_service, telegram_service)
@@ -76,6 +76,11 @@ async def lifespan(app: FastAPI):
         app.state.trading_engine = trading_engine
         app.state.telegram_service = telegram_service
         app.state.ea_instruction_queue = []  # simple global queue for EA instructions
+        # Wire queue into MT5 service for enqueueing orders
+        try:
+            mt5_service.set_instruction_queue(app.state.ea_instruction_queue)
+        except Exception as e:
+            logger.error(f"Failed to set EA instruction queue on MT5 service: {e}")
         
         # Start background services
         asyncio.create_task(trading_engine.start())

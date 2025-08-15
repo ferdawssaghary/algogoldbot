@@ -2,8 +2,15 @@ import asyncio
 import pytest
 from httpx import AsyncClient
 from starlette.testclient import TestClient
+import sys, os
 
-from backend.main import app
+# Ensure test DB does not require Postgres
+os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
+
+# Add project root to path
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+
+from main import app
 
 @pytest.mark.asyncio
 async def test_health():
